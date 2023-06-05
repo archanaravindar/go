@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build (amd64 || arm64) && linux
+//go:build (amd64 || arm64 || ppc64le) && linux
 
 package runtime
 
@@ -118,7 +118,7 @@ func (h *debugCallHandler) inject(info *siginfo, ctxt *sigctxt, gp2 *g) bool {
 		// Save the signal context
 		h.saveSigContext(ctxt)
 		// Set PC to debugCallV2.
-		ctxt.setsigpc(uint64(abi.FuncPCABIInternal(debugCallV2)))
+		ctxt.set_pc(uint64(abi.FuncPCABIInternal(debugCallV2)))
 		// Call injected. Switch to the debugCall protocol.
 		testSigtrap = h.handleF
 	case _Grunnable:
@@ -150,7 +150,7 @@ func (h *debugCallHandler) handle(info *siginfo, ctxt *sigctxt, gp2 *g) bool {
 		return false
 	}
 	if !sigctxtAtTrapInstruction(ctxt) {
-		println("trap at non-INT3 instruction pc =", hex(ctxt.sigpc()))
+		println("trap at non trap word PC =", hex(ctxt.sigpc()))
 		return false
 	}
 

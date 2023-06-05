@@ -1033,6 +1033,205 @@ TEXT runtime·gcWriteBarrier8<ABIInternal>(SB),NOSPLIT,$0
 	MOVD	$64, R29
 	JMP	gcWriteBarrier<>(SB)
 
+DATA	debugCallFrameTooLarge<>+0x00(SB)/20, $"call frame too large"
+GLOBL	debugCallFrameTooLarge<>(SB), RODATA, $20	// Size duplicated below
+
+// debugCallV2 is the entry point for debugger-injected function
+// calls on running goroutines. It informs the runtime that a
+// debug call has been injected and creates a call frame for the
+// debugger to fill in.
+//
+// To inject a function call, a debugger should:
+// 1. Check that the goroutine is in state _Grunning and that
+//    there are at least 288 bytes free on the stack.
+// 2. Set SP as SP-16.
+// 3. Store the current LR in (SP) (using the SP after step 2).
+// 4. Store the current PC in the LR register.
+// 5. Write the desired argument frame size at SP-16
+// 6. Save all machine registers (including flags and fpsimd registers)
+//    so they can be restored later by the debugger.
+// 7. Set the PC to debugCallV2 and resume execution.
+//
+// If the goroutine is in state _Grunnable, then it's not generally
+// safe to inject a call because it may return out via other runtime
+// operations. Instead, the debugger should unwind the stack to find
+// the return to non-runtime code, add a temporary breakpoint there,
+// and inject the call once that breakpoint is hit.
+//
+// If the goroutine is in any other state, it's not safe to inject a call.
+//
+// This function communicates back to the debugger by setting R20 and
+// invoking BRK to raise a breakpoint signal. Note that the signal PC of
+// the signal triggered by the BRK instruction is the PC where the signal
+// is trapped, not the next PC, so to resume execution, the debugger needs
+// to set the signal PC to PC+4. See the comments in the implementation for
+// the protocol the debugger is expected to follow. InjectDebugCall in the
+// runtime tests demonstrates this protocol.
+// The debugger must ensure that any pointers passed to the function
+// obey escape analysis requirements. Specifically, it must not pass
+// a stack pointer to an escaping argument. debugCallV2 cannot check
+// this invariant.
+//
+// This is ABIInternal because Go code injects its PC directly into new
+// goroutine stacks.
+TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
+	MOVD	R31, -24(R1) 
+	MOVD	LR, R31
+	MOVD	R31, -280(R1)
+	MOVW	CR, R0	// Save CR in caller's frame
+	MOVD	R0, -272(R1)
+	MOVD	R1, -264(R1)
+	MOVD	R2, -256(R1)
+	MOVD	R3, -248(R1)
+	MOVD	R4, -240(R1)
+	MOVD	R5, -232(R1)
+	MOVD	R6, -224(R1)
+	MOVD	R7, -216(R1)
+	MOVD	R8, -208(R1)
+	MOVD	R9, -200(R1)
+	MOVD	R10, -192(R1)
+	MOVD	R11, -184(R1)
+	MOVD	R12, -176(R1)
+	MOVD	R13, -168(R1)
+	MOVD	R14, -160(R1)
+	MOVD	R15, -152(R1)
+	MOVD	R16, -144(R1)
+	MOVD	R17, -136(R1)
+	MOVD	R18, -128(R1)
+	MOVD	R19, -120(R1)
+	MOVD	R20, -112(R1)
+	MOVD	R21, -104(R1)
+	MOVD	R22, -96(R1)
+	MOVD	R23, -88(R1)
+	MOVD	R24, -80(R1)
+	MOVD	R25, -72(R1)
+	MOVD	R26, -64(R1)
+	MOVD	R27, -56(R1)
+	MOVD	R28, -48(R1)
+	MOVD	R29, -40(R1)
+	MOVD	g, -32(R1)
+	ADD	$-288, R1
+	
+	MOVD	LR, R31
+	MOVD	R31, 8(R1)
+	CALL	runtime·debugCallCheck(SB)
+	MOVD	16(R1), R14
+	XOR	R0, R0
+	CMP	R14, R0
+	BEQ	good
+	
+	MOVD	R14, 8(R1)
+	MOVD	24(R1), R14
+	MOVD	R14, 16(R1)
+	
+	MOVD	$8, R20
+	TW	$31, R0, R0
+
+	BR	restore
+	
+good:
+#define DEBUG_CALL_DISPATCH(NAME,MAXSIZE)	\
+	MOVD	$MAXSIZE, R15;			\
+	CMP	R15, R14;			\
+	BGT	5(PC);				\
+	MOVD	$NAME(SB), R14;			\
+	MOVD	R14, 8(R1);			\
+	CALL	runtime·debugCallWrap(SB);	\
+	BR	restore
+
+	MOVD	272(R1), R14 // the argument frame size
+	DEBUG_CALL_DISPATCH(debugCall32<>, 32)
+	DEBUG_CALL_DISPATCH(debugCall64<>, 64)
+	DEBUG_CALL_DISPATCH(debugCall128<>, 128)
+	DEBUG_CALL_DISPATCH(debugCall256<>, 256)
+	DEBUG_CALL_DISPATCH(debugCall512<>, 512)
+	DEBUG_CALL_DISPATCH(debugCall1024<>, 1024)
+	DEBUG_CALL_DISPATCH(debugCall2048<>, 2048)
+	DEBUG_CALL_DISPATCH(debugCall4096<>, 4096)
+	DEBUG_CALL_DISPATCH(debugCall8192<>, 8192)
+	DEBUG_CALL_DISPATCH(debugCall16384<>, 16384)
+	DEBUG_CALL_DISPATCH(debugCall32768<>, 32768)
+	DEBUG_CALL_DISPATCH(debugCall65536<>, 65536)
+	// The frame size is too large. Report the error.
+	MOVD	$debugCallFrameTooLarge<>(SB), R14
+	MOVD	R14, 8(R1)
+	MOVD	$20, R14
+	MOVD	R14, 16(R1) // length of debugCallFrameTooLarge string
+	MOVD	$8, R20
+	TW	$31, R0, R0 // R0 has to be zero before this instn is executed 
+	BR	restore
+restore: 
+	MOVD	$16, R20
+	TW	$31, R0, R0
+	ADD	$288, R1
+	MOVD	-24(R1), R31
+	MOVD	-32(R1), g
+	MOVD	-40(R1), R29
+	MOVD	-48(R1), R28
+	MOVD	-56(R1), R27
+	MOVD	-64(R1), R26
+	MOVD	-72(R1), R25
+	MOVD	-80(R1), R24
+	MOVD	-88(R1), R23
+	MOVD	-96(R1), R22
+	MOVD	-104(R1), R21
+	MOVD	-112(R1), R20
+	MOVD	-120(R1), R19
+	MOVD	-128(R1), R18
+	MOVD	-136(R1), R17
+	MOVD	-144(R1), R16
+	MOVD	-152(R1), R15
+	MOVD	-160(R1), R14
+	MOVD	-168(R1), R13
+	MOVD	-176(R1), R12
+	MOVD	-184(R1), R11
+	MOVD	-192(R1), R10
+	MOVD	-200(R1), R9
+	MOVD	-208(R1), R8
+	MOVD	-216(R1), R7
+	MOVD	-224(R1), R6
+	MOVD	-232(R1), R5
+	MOVD	-240(R1), R4
+	MOVD	-248(R1), R3
+	MOVD	-256(R1), R2
+	MOVD	-272(R1), R0
+	MOVW	R14, CR
+	MOVD	-280(R1), R0
+	MOVW	R0, LR
+	XOR	R0, R0
+	BL	(LR)
+#define DEBUG_CALL_FN(NAME,MAXSIZE)	\
+TEXT NAME(SB),WRAPPER,$MAXSIZE-0;	\
+	NO_LOCAL_POINTERS;		\
+	MOVD	$0, R20;		\
+	TW	$31, R0, R0		\
+	MOVD	$1, R20;		\
+	TW	$31, R0, R0		\
+	RET
+DEBUG_CALL_FN(debugCall32<>, 32)
+DEBUG_CALL_FN(debugCall64<>, 64)
+DEBUG_CALL_FN(debugCall128<>, 128)
+DEBUG_CALL_FN(debugCall256<>, 256)
+DEBUG_CALL_FN(debugCall512<>, 512)
+DEBUG_CALL_FN(debugCall1024<>, 1024)
+DEBUG_CALL_FN(debugCall2048<>, 2048)
+DEBUG_CALL_FN(debugCall4096<>, 4096)
+DEBUG_CALL_FN(debugCall8192<>, 8192)
+DEBUG_CALL_FN(debugCall16384<>, 16384)
+DEBUG_CALL_FN(debugCall32768<>, 32768)
+DEBUG_CALL_FN(debugCall65536<>, 65536)
+
+TEXT runtime·debugCallPanicked(SB),NOSPLIT,$16-16
+	// Copy the panic value to the top of stack at SP+8.
+	MOVD	val_type+0(FP), R0
+	MOVD	R0, 8(R1)
+	MOVD	val_data+8(FP), R0
+	MOVD	R0, 16(R1)
+	MOVD	$2, R20
+	TW	$31, R0, R0
+	RET
+	
+
 // Note: these functions use a special calling convention to save generated code space.
 // Arguments are passed in registers, but the space for those arguments are allocated
 // in the caller's stack frame. These stubs write the args into that stack space and
