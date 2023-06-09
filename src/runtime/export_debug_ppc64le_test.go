@@ -30,12 +30,16 @@ func sigctxtStatus(ctxt *sigctxt) uint64 {
 
 func (h *debugCallHandler) saveSigContext(ctxt *sigctxt) {
 	sp := ctxt.sp()
-	sp -= 2 * goarch.PtrSize
+	sp -= 3 * goarch.PtrSize
 	ctxt.set_sp(sp)
 	*(*uint64)(unsafe.Pointer(uintptr(sp))) = ctxt.link() // save the current lr
 	ctxt.set_link(ctxt.pc())                              // set new lr to the current pc
 	// Write the argument frame size.
-	*(*uintptr)(unsafe.Pointer(uintptr(sp - 16))) = h.argSize
+	println("sp addr : ", hex((uintptr)(sp)))
+dumpregs(ctxt)
+	*(*uintptr)(unsafe.Pointer(uintptr(sp - 24))) = h.argSize
+	println("arg size inside savecontext",h.argSize)
+	println("arg size stored at  : ", hex((uintptr)(sp-24)))
 	// Save current registers.
 	h.sigCtxt.savedRegs = *ctxt.cregs()
 }
