@@ -1033,7 +1033,7 @@ TEXT runtime·gcWriteBarrier8<ABIInternal>(SB),NOSPLIT,$0
 	MOVD	$64, R29
 	JMP	gcWriteBarrier<>(SB)
 
-DATA	debugCallFrameTooLarge<>+0x00(SB)/20, $"call frame too large"
+DATA	debugCallFrameTooLarge<>+0x00(SB)/20, $"call frame t** large"
 GLOBL	debugCallFrameTooLarge<>(SB), RODATA, $20	// Size duplicated below
 
 // debugCallV2 is the entry point for debugger-injected function
@@ -1080,26 +1080,26 @@ TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
 	MOVW	CR, R0	// Save CR in caller's frame
 	MOVD	R0, 8(R1)
 	MOVDU	R1, -280(R1)
-	MOVD	R2, 32(R1)  // FIXED_FRAME(R1)
-	MOVD	R3, 40(R1)
-	MOVD	R4, 48(R1)
-	MOVD	R5, 56(R1)
-	MOVD	R6, 64(R1)
-	MOVD	R7, 72(R1)
-	MOVD	R8, 80(R1)
-	MOVD	R9, 88(R1)
-	MOVD	R10, 96(R1)
-	MOVD	R11, 104(R1)
-	MOVD	R12, 112(R1)
-	MOVD	R13, 120(R1)
-	MOVD	R14, 128(R1)
-	MOVD	R15, 136(R1)
-	MOVD	R16, 144(R1)
-	MOVD	R17, 152(R1)
-	MOVD	R18, 160(R1)
-	MOVD	R19, 168(R1)
-	MOVD	R20, 176(R1)
-	MOVD	R21, 184(R1)
+//	MOVD	R2, 32(R1)  // FIXED_FRAME(R1)
+	MOVD	R2, 40(R1)
+	MOVD	R3, 48(R1)
+	MOVD	R4, 56(R1)
+	MOVD	R5, 64(R1)
+	MOVD	R6, 72(R1)
+	MOVD	R7, 80(R1)
+	MOVD	R8, 88(R1)
+	MOVD	R9, 96(R1)
+	MOVD	R10, 104(R1)
+	MOVD	R11, 112(R1)
+	MOVD	R12, 120(R1)
+	MOVD	R13, 128(R1)
+	MOVD	R14, 136(R1)
+	MOVD	R15, 144(R1)
+	MOVD	R16, 152(R1)
+	MOVD	R17, 160(R1)
+	MOVD	R18, 168(R1)
+	MOVD	R19, 176(R1)
+	MOVD	R20, 184(R1)
 	MOVD	R22, 192(R1)
 	MOVD	R23, 200(R1)
 	MOVD	R24, 208(R1)
@@ -1112,7 +1112,7 @@ TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
 
 	MOVD    $0, R0
 	MOVD	LR, R31
-	MOVD	R31, 8(R1)
+	MOVD	R31, 32(R1)
 	CALL	runtime·debugCallCheck(SB)
 	MOVD	16(R1), R14
 	XOR	R0, R0
@@ -1134,7 +1134,7 @@ good:
 	CMP	R15, R14;			\
 	BGT	5(PC);				\
 	MOVD	$NAME(SB), R14;			\
-	MOVD	R14, 8(R1);			\
+	MOVD	R14, 32(R1);			\
 	CALL	runtime·debugCallWrap(SB);	\
 	BR	restore
 
@@ -1165,26 +1165,26 @@ restore:
 	MOVD	$16, R20
 	TW	$31, R0, R0
 
-	MOVD	32(R1), R2  // FIXED_FRAME(R1)
-	MOVD	40(R1), R3
-	MOVD	48(R1), R4
-	MOVD	56(R1), R5
-	MOVD	64(R1), R6
-	MOVD	72(R1), R7
-	MOVD	80(R1), R8
-	MOVD	88(R1), R9
-	MOVD	96(R1), R10
-	MOVD	104(R1), R11
-	MOVD	112(R1), R12
-	MOVD    120(R1), R13
-	MOVD	128(R1), R14
-	MOVD	136(R1), R15
-	MOVD	144(R1), R16
-	MOVD	152(R1), R17
-	MOVD	160(R1), R18
-	MOVD	168(R1), R19
-	MOVD	176(R1), R20
-	MOVD	184(R1), R21
+	//MOVD	32(R1), R2  // FIXED_FRAME(R1)
+	MOVD	40(R1), R2
+	MOVD	48(R1), R3
+	MOVD	56(R1), R4
+	MOVD	64(R1), R5
+	MOVD	72(R1), R6
+	MOVD	80(R1), R7
+	MOVD	88(R1), R8
+	MOVD	96(R1), R9
+	MOVD	104(R1), R10
+	MOVD	112(R1), R11
+	MOVD    120(R1), R12
+	MOVD	128(R1), R13
+	MOVD	136(R1), R14
+	MOVD	144(R1), R15
+	MOVD	152(R1), R16
+	MOVD	160(R1), R17
+	MOVD	168(R1), R18
+	MOVD	176(R1), R19
+	MOVD	184(R1), R20
 	MOVD	192(R1), R22
 	MOVD	200(R1), R23
 	MOVD	208(R1), R24
