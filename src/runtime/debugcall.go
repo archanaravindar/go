@@ -27,8 +27,10 @@ func debugCallPanicked(val any)
 //
 //go:nosplit
 func debugCallCheck(pc uintptr) string {
+			println("debugcallcheck pc", hex(pc))
 	// No user calls from the system stack.
 	if getg() != getg().m.curg {
+		println("getg not equal to curg")
 		return debugCallSystemStack
 	}
 	if sp := getcallersp(); !(getg().stack.lo < sp && sp <= getg().stack.hi) {
@@ -36,6 +38,7 @@ func debugCallCheck(pc uintptr) string {
 		// g0 stack without switching g. We can't safely make
 		// a call in this state. (We can't even safely
 		// systemstack.)
+		println("fast syscalls, race call switch")
 		return debugCallSystemStack
 	}
 
@@ -45,12 +48,14 @@ func debugCallCheck(pc uintptr) string {
 	systemstack(func() {
 		f := findfunc(pc)
 		if !f.valid() {
+			println("call unknown func")
+			println("pc", hex(pc))
 			ret = debugCallUnknownFunc
 			return
 		}
 
 		name := funcname(f)
-
+println("name before multiswitch",name)
 		switch name {
 		case "debugCall32",
 			"debugCall64",
@@ -79,15 +84,22 @@ func debugCallCheck(pc uintptr) string {
 			return
 		}
 
+		println("pc ",hex(pc))
+		println("f.entry ",hex((uint64(f.entry()))))
 		// Check that this isn't an unsafe-point.
 		if pc != f.entry() {
 			pc--
 		}
+		println("PC for check ", hex(pc))
 		up := pcdatavalue(f, abi.PCDATA_UnsafePoint, pc, nil)
 		if up != abi.UnsafePointSafe {
 			// Not at a safe point.
+		println("PC at an unsafe point")
 			ret = debugCallUnsafePoint
+		} else {
+			println("PC at a safe point")
 		}
+		println("ret value ",ret)
 	})
 	return ret
 }
@@ -104,7 +116,9 @@ func debugCallCheck(pc uintptr) string {
 func debugCallWrap(dispatch uintptr) {
 	var lockedm bool
 	var lockedExt uint32
+	println("comes into debugCallWrap")
 	callerpc := getcallerpc()
+	println("callerpc ",hex(callerpc))
 	gp := getg()
 
 	// Create a new goroutine to execute the call on. Run this on

@@ -35,7 +35,7 @@ func (h *debugCallHandler) saveSigContext(ctxt *sigctxt) {
 	*(*uint64)(unsafe.Pointer(uintptr(sp))) = ctxt.link() // save the current lr
 	ctxt.set_link(ctxt.pc())                              // set new lr to the current pc
 	// Write the argument frame size.
-	println("sp addr : ", hex((uintptr)(sp)))
+	println("sp addr at save sig context: ", hex((uintptr)(sp)), "pc addr at save sign context ",hex((uintptr)(ctxt.pc())))
 dumpregs(ctxt)
 	*(*uintptr)(unsafe.Pointer(uintptr(sp - 24))) = h.argSize
 	println("arg size inside savecontext",h.argSize)
@@ -76,6 +76,7 @@ func (h *debugCallHandler) debugCallReturn(ctxt *sigctxt) {
 // case 2
 func (h *debugCallHandler) debugCallPanicOut(ctxt *sigctxt) {
 	sp := ctxt.sp()
+	println("debug call panic", hex(ctxt.pc()), hex(sp))
 	memmove(unsafe.Pointer(&h.panic), unsafe.Pointer(uintptr(sp)+8), 2*goarch.PtrSize)
 	ctxt.set_pc(ctxt.pc() + 4)
 }
@@ -83,6 +84,7 @@ func (h *debugCallHandler) debugCallPanicOut(ctxt *sigctxt) {
 // case 8
 func (h *debugCallHandler) debugCallUnsafe(ctxt *sigctxt) {
 	sp := ctxt.sp()
+	println("debug call unsafe", hex(ctxt.pc()), hex(sp))
 	reason := *(*string)(unsafe.Pointer(uintptr(sp) + 8))
 	h.err = plainError(reason)
 	ctxt.set_pc(ctxt.pc() + 4)
@@ -92,6 +94,7 @@ func (h *debugCallHandler) debugCallUnsafe(ctxt *sigctxt) {
 func (h *debugCallHandler) restoreSigContext(ctxt *sigctxt) {
 	// Restore all registers except for pc and sp
 	pc, sp := ctxt.pc(), ctxt.sp()
+	println("restore sig context", hex(pc), hex(sp))
 	*ctxt.cregs() = h.sigCtxt.savedRegs
 	ctxt.set_pc(pc + 4)
 	ctxt.set_sp(sp)

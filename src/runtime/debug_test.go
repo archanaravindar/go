@@ -30,7 +30,7 @@ func startDebugCallWorker(t *testing.T) (g *runtime.G, after func()) {
 	// This can deadlock if run under a debugger because it
 	// depends on catching SIGTRAP, which is usually swallowed by
 	// a debugger.
-	skipUnderDebugger(t)
+	//skipUnderDebugger(t)
 
 	// This can deadlock if there aren't enough threads or if a GC
 	// tries to interrupt an atomic loop (see issue #10958). Execute
@@ -156,15 +156,19 @@ func TestDebugCall(t *testing.T) {
 	if _, err := runtime.InjectDebugCall(g, fn, &regs, args, debugCallTKill, false); err != nil {
 		t.Fatal(err)
 	}
+	println("comes here 1")
 	var result0 int
 	var result1 float64
 	if len(intRegs) > 0 {
 		result0 = int(intRegs[0])
+		println("result0 ", result0)
 		result1 = math.Float64frombits(floatRegs[0])
 	} else {
 		result0 = args.y0Ret
+		println("result0 ", result0)
 		result1 = args.y1Ret
 	}
+	println("comes here 2")
 	if result0 != 43 {
 		t.Errorf("want 43, got %d", result0)
 	}
@@ -267,7 +271,7 @@ func TestDebugCallUnsafePoint(t *testing.T) {
 }
 
 func TestDebugCallPanic(t *testing.T) {
-	skipUnderDebugger(t)
+	//skipUnderDebugger(t)
 
 	// This can deadlock if there aren't enough threads.
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(8))
