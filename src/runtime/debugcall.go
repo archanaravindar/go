@@ -134,11 +134,12 @@ func debugCallWrap(dispatch uintptr) {
 			callingG: gp,
 		}
 		newg.param = unsafe.Pointer(args)
-
+println("checkpoint 1")
 		// If the current G is locked, then transfer that
 		// locked-ness to the new goroutine.
 		if gp.lockedm != 0 {
 			// Save lock state to restore later.
+println("checkpoint 2")
 			mp := gp.m
 			if mp != gp.lockedm.ptr() {
 				throw("inconsistent lockedm")
@@ -163,9 +164,11 @@ func debugCallWrap(dispatch uintptr) {
 		// stack shrinks.
 		gp.asyncSafePoint = true
 
+println("async safe point true")
 		// Stash newg away so we can execute it below (mcall's
 		// closure can't capture anything).
 		gp.schedlink.set(newg)
+println("set new g")
 	})
 
 	// Switch to the new goroutine.
@@ -174,6 +177,7 @@ func debugCallWrap(dispatch uintptr) {
 		newg := gp.schedlink.ptr()
 		gp.schedlink = 0
 
+println("park new g")
 		// Park the calling goroutine.
 		if traceEnabled() {
 			traceGoPark(traceBlockDebugCall, 1)
@@ -181,6 +185,7 @@ func debugCallWrap(dispatch uintptr) {
 		casGToWaiting(gp, _Grunning, waitReasonDebugCall)
 		dropg()
 
+println("execute new g")
 		// Directly execute the new goroutine. The debug
 		// protocol will continue on the new goroutine, so
 		// it's important we not just let the scheduler do
@@ -198,8 +203,8 @@ func debugCallWrap(dispatch uintptr) {
 		mp.lockedg.set(gp)
 		gp.lockedm.set(mp)
 	}
-
 	gp.asyncSafePoint = false
+println("set async safe point false")
 }
 
 type debugCallWrapArgs struct {

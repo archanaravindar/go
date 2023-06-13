@@ -54,7 +54,9 @@ func InjectDebugCall(gp *g, fn any, regArgs *abi.RegArgs, stackArgs any, tkill f
 	h.mp = gp.lockedm.ptr()
 	h.fv, h.regArgs, h.argp, h.argSize = fv, regArgs, argp, argSize
 	println("coming here arg size: ", argSize)
-	println("fv regArgs argp ", fv, regArgs, argp)
+	println("fv.fn" ,hex(fv.fn))
+	//println("fv fv.fn  ", hex((uint64)fv), hex((uint64)fv.fn))
+	//println("fv fv.fn regArgs argp ", hex((uint64)fv), hex((uint64)fv.fn),hex(uint64(regArgs)), hex(uint64(argp)))
 	h.handleF = h.handle // Avoid allocating closure during signal
 
 	defer func() { testSigtrap = nil }()

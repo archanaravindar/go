@@ -1141,7 +1141,7 @@ good:
 	CALL	runtime·debugCallWrap(SB);	\
 	BR	restore
 
-	MOVD	272(R1), R14 // the argument frame size
+	MOVD	304(R1), R14 // the argument frame size
 //	MOVD	$0, R14 // the argument frame size
 
 	DEBUG_CALL_DISPATCH(debugCall32<>, 32)
