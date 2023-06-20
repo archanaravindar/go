@@ -9,6 +9,7 @@ package runtime
 import (
 	"internal/abi"
 	"internal/goarch"
+	"math"
 	"unsafe"
 )
 
@@ -30,16 +31,17 @@ func sigctxtStatus(ctxt *sigctxt) uint64 {
 
 func (h *debugCallHandler) saveSigContext(ctxt *sigctxt) {
 	sp := ctxt.sp()
-	sp -= 3 * goarch.PtrSize
+	sp -=  2*goarch.PtrSize
 	ctxt.set_sp(sp)
+	println("LR being saved", hex(ctxt.link())," at saveSigContext at SP " , hex(sp))
 	*(*uint64)(unsafe.Pointer(uintptr(sp))) = ctxt.link() // save the current lr
 	ctxt.set_link(ctxt.pc())                              // set new lr to the current pc
 	// Write the argument frame size.
 	println("sp addr at save sig context: ", hex((uintptr)(sp)), "pc addr at save sign context ",hex((uintptr)(ctxt.pc())))
 dumpregs(ctxt)
-	*(*uintptr)(unsafe.Pointer(uintptr(sp - 24))) = h.argSize
+	*(*uintptr)(unsafe.Pointer(uintptr(sp - 16))) = h.argSize
 	println("arg size inside savecontext",h.argSize)
-	println("arg size stored at  : ", hex((uintptr)(sp-24)))
+	println("arg size stored at  : ", hex((uintptr)(sp-16)))
 	// Save current registers.
 	h.sigCtxt.savedRegs = *ctxt.cregs()
 }
@@ -47,13 +49,13 @@ dumpregs(ctxt)
 // case 0
 func (h *debugCallHandler) debugCallRun(ctxt *sigctxt) {
 	sp := ctxt.sp()
-	println("sp addr at save sig context: ", hex((uintptr)(sp)), "pc addr at save sign context ",hex((uintptr)(ctxt.pc())))
-dumpregs(ctxt)
+	println("sp addr at debug call run: ", hex((uintptr)(sp)), "pc addr at debug call run", hex((uintptr)(ctxt.pc())))
 	memmove(unsafe.Pointer(uintptr(sp)+8), h.argp, h.argSize)
 	if h.regArgs != nil {
 println("storing reg args at ",hex(uintptr(sp)+8),", memmove size ", h.argSize)
 		storeRegArgs(ctxt.cregs(), h.regArgs)
 	}
+dumpregs(ctxt)
 	// Push return PC, which should be the signal PC+4, because
 	// the signal PC is the PC of the trap instruction itself.
 	ctxt.set_link(ctxt.pc() + 4)
@@ -105,10 +107,10 @@ func (h *debugCallHandler) restoreSigContext(ctxt *sigctxt) {
 	*ctxt.cregs() = h.sigCtxt.savedRegs
 	println("after copy of saved regs")
 	dumpregs(ctxt)
-	println("before set PC and sp values", hex(ctxt.pc()), hex(ctxt.sp()))
+	println("before reset PC and sp values LR values", hex(ctxt.pc()), hex(ctxt.sp()), hex(ctxt.link()))
 	ctxt.set_pc(pc+4)
 	ctxt.set_sp(sp)
-	println("PC and sp values", hex(ctxt.pc()), hex(ctxt.sp()))
+	println("after reset PC and sp values LR values", hex(ctxt.pc()), hex(ctxt.sp()), hex(ctxt.link()))
 }
 
 // storeRegArgs sets up argument registers in the signal
@@ -118,24 +120,28 @@ func (h *debugCallHandler) restoreSigContext(ctxt *sigctxt) {
 func storeRegArgs(dst *sigcontext, src *abi.RegArgs) {
 	println("inside storeRegArgs")
 	// Gprs R3..R10 are used to pass int arguments in registers on PPC64
-	for i, r := range [8]int{} {
-		println("saving gpr reg ",i+3)
-		dst.gp_regs[i+3] = uint64(src.Ints[r])
+	for i := 0; i < 8; i++ {
+		println("saving gpr reg ",i)
+		println(uint64(src.Ints[i]))
+		dst.gp_regs[i+3] = uint64(src.Ints[i])
 	}
 	// Fprs F1..F13 are used to pass float arguments in registers on PPC64
-	//for i, r := range[13]int{} {
-	//	println("saving fpr reg ",i+1)
-//		dst.fp_regs[i+1] = src.Floats[r]
-//	}
+	for i := 0; i < 12; i++ {
+                println("saving gpr reg ",i)
+                println(uint64(src.Ints[i]))
+                dst.fp_regs[i+1] = math.Float64frombits(src.Floats[i])
+      }
+
 }
 
 func loadRegArgs(dst *abi.RegArgs, src *sigcontext) {
 	// Gprs R3..R10 are used to pass int arguments in registers on PPC64
-	for i, r := range [8]int{} {
-		dst.Ints[r] = uintptr(src.gp_regs[i+3])
+	for i, _ := range [8]int{} {
+		dst.Ints[i] = uintptr(src.gp_regs[i+3])
 	}
 	// Fprs F1..F13 are used to pass float arguments in registers on PPC64
-//	for i,r := range [13]int{} {
-//		dst.Floats[r] = uint64(src.fp_regs[i+1])
-//	}
+	   for i, _ := range [12]int{} {
+                dst.Floats[i] = math.Float64bits(src.fp_regs[i+1])
+        }
+
 }

@@ -129,6 +129,7 @@ func debugCallWrap(dispatch uintptr) {
 		// implicit closure allocation in the runtime.
 		fn := debugCallWrap1
 		newg := newproc1(*(**funcval)(unsafe.Pointer(&fn)), gp, callerpc)
+		println("dispatch in Wrap :",hex(dispatch))
 		args := &debugCallWrapArgs{
 			dispatch: dispatch,
 			callingG: gp,
@@ -185,7 +186,7 @@ println("park new g")
 		casGToWaiting(gp, _Grunning, waitReasonDebugCall)
 		dropg()
 
-println("execute new g")
+		println("Wrap: execute new g")
 		// Directly execute the new goroutine. The debug
 		// protocol will continue on the new goroutine, so
 		// it's important we not just let the scheduler do
@@ -220,11 +221,13 @@ func debugCallWrap1() {
 	dispatch, callingG := args.dispatch, args.callingG
 	gp.param = nil
 
+	println("dispatch in Wrap1", hex(dispatch))
 	// Dispatch call and trap panics.
 	debugCallWrap2(dispatch)
 
 	// Resume the caller goroutine.
 	getg().schedlink.set(callingG)
+	println("Wrap 1 calling function on goroutine", gp)
 	mcall(func(gp *g) {
 		callingG := gp.schedlink.ptr()
 		gp.schedlink = 0
@@ -252,6 +255,7 @@ func debugCallWrap1() {
 			traceGoUnpark(callingG, 0)
 		}
 		casgstatus(callingG, _Gwaiting, _Grunnable)
+		println("Wrap1: executing goroutine")
 		execute(callingG, true)
 	})
 }

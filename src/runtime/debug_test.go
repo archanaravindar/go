@@ -56,6 +56,7 @@ func startDebugCallWorker(t *testing.T) (g *runtime.G, after func()) {
 	ready := make(chan *runtime.G, 1)
 	var stop uint32
 	done := make(chan error)
+	println("params to debugCallWorker ", ready, &stop, done)
 	go debugCallWorker(ready, &stop, done)
 	g = <-ready
 	return g, func() {
@@ -88,6 +89,7 @@ func debugCallWorker(ready chan<- *runtime.G, stop *uint32, done chan<- error) {
 //
 //go:noinline
 func debugCallWorker2(stop *uint32, x *int) {
+	//println(" params of debugCallWorker2 ", stop, x)
 	for atomic.LoadUint32(stop) == 0 {
 		// Strongly encourage x to live in a register so we
 		// can test pointer register adjustment.
@@ -135,6 +137,7 @@ func TestDebugCall(t *testing.T) {
 
 	// Inject a call into the debugCallWorker goroutine and test
 	// basic argument and result passing.
+	
 	fn := func(x int, y float64) (y0Ret int, y1Ret float64) {
 		return x + 1, y + 1.0
 	}
@@ -152,11 +155,14 @@ func TestDebugCall(t *testing.T) {
 			x1: 42.0,
 		}
 	}
+	
 
 	if _, err := runtime.InjectDebugCall(g, fn, &regs, args, debugCallTKill, false); err != nil {
 		t.Fatal(err)
 	}
-	println("comes here 1")
+	
+	println("comes here 1",err)
+
 	var result0 int
 	var result1 float64
 	if len(intRegs) > 0 {
@@ -165,16 +171,21 @@ func TestDebugCall(t *testing.T) {
 		result1 = math.Float64frombits(floatRegs[0])
 	} else {
 		result0 = args.y0Ret
-		println("result0 ", result0)
+		println("result1 ", result0)
 		result1 = args.y1Ret
 	}
 	println("comes here 2")
 	if result0 != 43 {
 		t.Errorf("want 43, got %d", result0)
+	} else {
+		println("result 0 match success")
 	}
 	if result1 != fval+1 {
 		t.Errorf("want 43, got %f", result1)
+	} else {
+		println("result 1 match success")
 	}
+	
 }
 
 func TestDebugCallLarge(t *testing.T) {

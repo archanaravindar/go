@@ -87,10 +87,8 @@ func InjectDebugCall(gp *g, fn any, regArgs *abi.RegArgs, stackArgs any, tkill f
 					continue
 				}
 			}
-			println("plain error")
 			return nil, h.err
 		}
-			println("panic error")
 		return h.panic, nil
 	}
 }
@@ -180,14 +178,18 @@ func (h *debugCallHandler) handle(info *siginfo, ctxt *sigctxt, gp2 *g) bool {
 		println("f now",funcname(f))
 		println("case 2 debugCallPanicked at PC",hex(ctxt.pc()))
 		h.debugCallPanicOut(ctxt)
-	case 24:
-		println("haha i m here")
+//	case 24:
+//		println("haha i m here")
 	case 8:
 		// Call isn't safe. Get the reason.
 		h.debugCallUnsafe(ctxt)
 		println("case 8 debugCallUnsafe")
 		println("unsafe func ", funcname(f)," PC =", hex(ctxt.sigpc()))
 		// Don't wake h.done. We need to transition to status 16 first.
+	//case 22:
+	//	println("called debugcall* successfully")
+	//	h.restoreSigContext(ctxt)
+	//	notewakeup(&h.done)
 	case 16:
 		println("case 16 restore sig context")
 		h.restoreSigContext(ctxt)
