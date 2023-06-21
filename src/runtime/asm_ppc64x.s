@@ -1078,7 +1078,7 @@ TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
 	MOVD	LR, R31
 	MOVD	R31, -320(R1)
 	ADD	$-320, R1
-	MOVD	R2, 48(R1)  // FIXED_FRAME(R1)
+	MOVD	R2, 24(R1)  // FIXED_FRAME(R1)
 	MOVD	R3, 56(R1)
 	MOVD	R4, 64(R1)
 	MOVD	R5, 72(R1)
@@ -1116,7 +1116,7 @@ TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
 	BEQ	good
 	
 	MOVD    R14, 8(R1)
-        MOVD    24(R1), R14
+        MOVD    48(R1), R14
         MOVD    R14, 16(R1)
 	
 	MOVD	$8, R20
@@ -1135,6 +1135,7 @@ good:
 	BR	restore
 
 	MOVD	272(R1), R14 // the argument frame size
+	//MOVD	304(R1), R14 // the argument frame size
 //	MOVD	$0, R14 // the argument frame size
 
 	DEBUG_CALL_DISPATCH(debugCall32<>, 32)
@@ -1162,7 +1163,7 @@ restore:
 	TW	$31, R0, R0
 
 	//MOVD	32(R1), R2  // FIXED_FRAME(R1)
-	MOVD	48(R1), R2
+	MOVD	24(R1), R2
 	MOVD	56(R1), R3
 	MOVD	64(R1), R4
 	MOVD	72(R1), R5
@@ -1192,7 +1193,7 @@ restore:
 	MOVD	264(R1), g
 	MOVD	0(R1), R31
 	MOVD	R31, LR
-	ADD	$320, R1
+	ADD	$336, R1
 	RET
 #define DEBUG_CALL_FN(NAME,MAXSIZE)	\
 TEXT NAME(SB),WRAPPER,$MAXSIZE-0;	\

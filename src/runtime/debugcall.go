@@ -27,10 +27,10 @@ func debugCallPanicked(val any)
 //
 //go:nosplit
 func debugCallCheck(pc uintptr) string {
-			println("debugcallcheck pc", hex(pc))
+			//println("debugcallcheck pc", hex(pc))
 	// No user calls from the system stack.
 	if getg() != getg().m.curg {
-		println("getg not equal to curg")
+		//println("getg not equal to curg")
 		return debugCallSystemStack
 	}
 	if sp := getcallersp(); !(getg().stack.lo < sp && sp <= getg().stack.hi) {
@@ -38,7 +38,7 @@ func debugCallCheck(pc uintptr) string {
 		// g0 stack without switching g. We can't safely make
 		// a call in this state. (We can't even safely
 		// systemstack.)
-		println("fast syscalls, race call switch")
+		//println("fast syscalls, race call switch")
 		return debugCallSystemStack
 	}
 
@@ -48,14 +48,14 @@ func debugCallCheck(pc uintptr) string {
 	systemstack(func() {
 		f := findfunc(pc)
 		if !f.valid() {
-			println("call unknown func")
-			println("pc", hex(pc))
+			//println("call unknown func")
+			//println("pc", hex(pc))
 			ret = debugCallUnknownFunc
 			return
 		}
 
 		name := funcname(f)
-println("name before multiswitch",name)
+//println("name before multiswitch",name)
 		switch name {
 		case "debugCall32",
 			"debugCall64",
@@ -84,22 +84,22 @@ println("name before multiswitch",name)
 			return
 		}
 
-		println("pc ",hex(pc))
-		println("f.entry ",hex((uint64(f.entry()))))
+		//println("pc ",hex(pc))
+		//println("f.entry ",hex((uint64(f.entry()))))
 		// Check that this isn't an unsafe-point.
 		if pc != f.entry() {
 			pc--
 		}
-		println("PC for check ", hex(pc))
+		//println("PC for check ", hex(pc))
 		up := pcdatavalue(f, abi.PCDATA_UnsafePoint, pc, nil)
 		if up != abi.UnsafePointSafe {
 			// Not at a safe point.
-		println("PC at an unsafe point")
+		//println("PC at an unsafe point")
 			ret = debugCallUnsafePoint
 		} else {
-			println("PC at a safe point")
+			//println("PC at a safe point")
 		}
-		println("ret value ",ret)
+		//println("ret value ",ret)
 	})
 	return ret
 }
@@ -116,9 +116,9 @@ println("name before multiswitch",name)
 func debugCallWrap(dispatch uintptr) {
 	var lockedm bool
 	var lockedExt uint32
-	println("comes into debugCallWrap")
+	//println("comes into debugCallWrap")
 	callerpc := getcallerpc()
-	println("callerpc ",hex(callerpc))
+	//println("callerpc ",hex(callerpc))
 	gp := getg()
 
 	// Create a new goroutine to execute the call on. Run this on
@@ -129,18 +129,18 @@ func debugCallWrap(dispatch uintptr) {
 		// implicit closure allocation in the runtime.
 		fn := debugCallWrap1
 		newg := newproc1(*(**funcval)(unsafe.Pointer(&fn)), gp, callerpc)
-		println("dispatch in Wrap :",hex(dispatch))
+		//println("dispatch in Wrap :",hex(dispatch))
 		args := &debugCallWrapArgs{
 			dispatch: dispatch,
 			callingG: gp,
 		}
 		newg.param = unsafe.Pointer(args)
-println("checkpoint 1")
+//println("checkpoint 1")
 		// If the current G is locked, then transfer that
 		// locked-ness to the new goroutine.
 		if gp.lockedm != 0 {
 			// Save lock state to restore later.
-println("checkpoint 2")
+//println("checkpoint 2")
 			mp := gp.m
 			if mp != gp.lockedm.ptr() {
 				throw("inconsistent lockedm")
@@ -165,11 +165,11 @@ println("checkpoint 2")
 		// stack shrinks.
 		gp.asyncSafePoint = true
 
-println("async safe point true")
+//println("async safe point true")
 		// Stash newg away so we can execute it below (mcall's
 		// closure can't capture anything).
 		gp.schedlink.set(newg)
-println("set new g")
+//println("set new g")
 	})
 
 	// Switch to the new goroutine.
@@ -178,7 +178,7 @@ println("set new g")
 		newg := gp.schedlink.ptr()
 		gp.schedlink = 0
 
-println("park new g")
+//println("park new g")
 		// Park the calling goroutine.
 		if traceEnabled() {
 			traceGoPark(traceBlockDebugCall, 1)
@@ -186,7 +186,7 @@ println("park new g")
 		casGToWaiting(gp, _Grunning, waitReasonDebugCall)
 		dropg()
 
-		println("Wrap: execute new g")
+		//println("Wrap: execute new g")
 		// Directly execute the new goroutine. The debug
 		// protocol will continue on the new goroutine, so
 		// it's important we not just let the scheduler do
@@ -205,7 +205,7 @@ println("park new g")
 		gp.lockedm.set(mp)
 	}
 	gp.asyncSafePoint = false
-println("set async safe point false")
+//println("set async safe point false")
 }
 
 type debugCallWrapArgs struct {
@@ -221,13 +221,13 @@ func debugCallWrap1() {
 	dispatch, callingG := args.dispatch, args.callingG
 	gp.param = nil
 
-	println("dispatch in Wrap1", hex(dispatch))
+	//println("dispatch in Wrap1", hex(dispatch))
 	// Dispatch call and trap panics.
 	debugCallWrap2(dispatch)
 
 	// Resume the caller goroutine.
 	getg().schedlink.set(callingG)
-	println("Wrap 1 calling function on goroutine", gp)
+	//println("Wrap 1 calling function on goroutine", gp)
 	mcall(func(gp *g) {
 		callingG := gp.schedlink.ptr()
 		gp.schedlink = 0
@@ -255,7 +255,7 @@ func debugCallWrap1() {
 			traceGoUnpark(callingG, 0)
 		}
 		casgstatus(callingG, _Gwaiting, _Grunnable)
-		println("Wrap1: executing goroutine")
+		//println("Wrap1: executing goroutine")
 		execute(callingG, true)
 	})
 }

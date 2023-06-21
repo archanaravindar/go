@@ -56,7 +56,7 @@ func startDebugCallWorker(t *testing.T) (g *runtime.G, after func()) {
 	ready := make(chan *runtime.G, 1)
 	var stop uint32
 	done := make(chan error)
-	println("params to debugCallWorker ", ready, &stop, done)
+	//println("params to debugCallWorker ", ready, &stop, done)
 	go debugCallWorker(ready, &stop, done)
 	g = <-ready
 	return g, func() {
@@ -89,7 +89,8 @@ func debugCallWorker(ready chan<- *runtime.G, stop *uint32, done chan<- error) {
 //
 //go:noinline
 func debugCallWorker2(stop *uint32, x *int) {
-	//println(" params of debugCallWorker2 ", stop, x)
+//	        println(" params of debugCallWorker2 ", stop, x)
+
 	for atomic.LoadUint32(stop) == 0 {
 		// Strongly encourage x to live in a register so we
 		// can test pointer register adjustment.
@@ -161,20 +162,20 @@ func TestDebugCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	
-	println("comes here 1",err)
+	//println("comes here 1",err)
 
 	var result0 int
 	var result1 float64
 	if len(intRegs) > 0 {
 		result0 = int(intRegs[0])
-		println("result0 ", result0)
+		//println("result0 ", result0)
 		result1 = math.Float64frombits(floatRegs[0])
 	} else {
 		result0 = args.y0Ret
-		println("result1 ", result0)
+		//println("result1 ", result0)
 		result1 = args.y1Ret
 	}
-	println("comes here 2")
+	//println("comes here 2")
 	if result0 != 43 {
 		t.Errorf("want 43, got %d", result0)
 	} else {
@@ -225,6 +226,7 @@ func TestDebugCallGC(t *testing.T) {
 	if _, err := runtime.InjectDebugCall(g, runtime.GC, nil, nil, debugCallTKill, false); err != nil {
 		t.Fatal(err)
 	}
+	//println("end of test Debug Call GC")
 }
 
 func TestDebugCallGrowStack(t *testing.T) {
@@ -236,6 +238,7 @@ func TestDebugCallGrowStack(t *testing.T) {
 	if _, err := runtime.InjectDebugCall(g, func() { growStack(nil) }, nil, nil, debugCallTKill, false); err != nil {
 		t.Fatal(err)
 	}
+	//println("end of test Debug Call Grow Stack")
 }
 
 //go:nosplit
@@ -279,6 +282,7 @@ func TestDebugCallUnsafePoint(t *testing.T) {
 	if msg := "call not at safe point"; err == nil || err.Error() != msg {
 		t.Fatalf("want %q, got %s", msg, err)
 	}
+	//println("end of test Debug Call Unsafe point")
 }
 
 func TestDebugCallPanic(t *testing.T) {
@@ -319,4 +323,5 @@ func TestDebugCallPanic(t *testing.T) {
 	if ps, ok := p.(string); !ok || ps != "test" {
 		t.Fatalf("wanted panic %v, got %v", "test", p)
 	}
+	//println("end of Debug CAll Panic")
 }
