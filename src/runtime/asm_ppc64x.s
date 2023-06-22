@@ -1075,9 +1075,13 @@ GLOBL	debugCallFrameTooLarge<>(SB), RODATA, $20	// Size duplicated below
 // This is ABIInternal because Go code injects its PC directly into new
 // goroutine stacks.
 TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
+ 	MOVD    0(R1), R31
+        MOVD    R31, -328(R1) // caller lr
 	MOVD	LR, R31
 	MOVD	R31, -320(R1)
 	ADD	$-320, R1
+	MOVW	CR, R31
+	MOVD 	R31, 8(R1)
 	MOVD	R2, 24(R1)  // FIXED_FRAME(R1)
 	MOVD	R3, 56(R1)
 	MOVD	R4, 64(R1)
@@ -1115,9 +1119,9 @@ TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
 	CMP	R14, R0
 	BEQ	good
 	
-	MOVD    R14, 8(R1)
+	//MOVD    R14, 8(R1)
         MOVD    48(R1), R14
-        MOVD    R14, 16(R1)
+        //MOVD    R14, 16(R1)
 	
 	MOVD	$8, R20
 	TW	$31, R0, R0
@@ -1152,9 +1156,9 @@ good:
 	DEBUG_CALL_DISPATCH(debugCall65536<>, 65536)
 	// The frame size is too large. Report the error.
 	MOVD	$debugCallFrameTooLarge<>(SB), R14
-	MOVD	R14, 8(R1)
+	MOVD	R14, 40(R1)
 	MOVD	$20, R14
-	MOVD	R14, 16(R1) // length of debugCallFrameTooLarge string
+	MOVD	R14, 48(R1) // length of debugCallFrameTooLarge string
 	MOVD	$8, R20
 	TW	$31, R0, R0 // R0 has to be zero before this instn is executed 
 	BR	restore
@@ -1163,6 +1167,8 @@ restore:
 	TW	$31, R0, R0
 
 	//MOVD	32(R1), R2  // FIXED_FRAME(R1)
+	MOVD	8(R1), R31
+	MOVW	R31, CR
 	MOVD	24(R1), R2
 	MOVD	56(R1), R3
 	MOVD	64(R1), R4
@@ -1191,10 +1197,16 @@ restore:
 	MOVD	248(R1), R27
 	MOVD	256(R1), R28
 	MOVD	264(R1), g
-	MOVD	0(R1), R31
-	MOVD	R31, LR
-	ADD	$336, R1
-	RET
+	//MOVD	0(R1), R31
+	//MOVD	R31, LR
+	//ADD	$336, R1
+	//RET
+	MOVD    -8(R1), R31
+        MOVD    R31, LR // restore old lr
+        MOVD    0(R1), CTR // caller PC
+        ADD     $336, R1
+        JMP     (CTR)
+
 #define DEBUG_CALL_FN(NAME,MAXSIZE)	\
 TEXT NAME(SB),WRAPPER,$MAXSIZE-0;	\
 	NO_LOCAL_POINTERS;		\
@@ -1216,12 +1228,12 @@ DEBUG_CALL_FN(debugCall16384<>, 16384)
 DEBUG_CALL_FN(debugCall32768<>, 32768)
 DEBUG_CALL_FN(debugCall65536<>, 65536)
 
-TEXT runtime·debugCallPanicked(SB),NOSPLIT,$16-16
+TEXT runtime·debugCallPanicked(SB),NOSPLIT,$48-16
 	// Copy the panic value to the top of stack at SP+8.
 	MOVD	val_type+0(FP), R0
-	MOVD	R0, 8(R1)
+	MOVD	R0, 40(R1)
 	MOVD	val_data+8(FP), R0
-	MOVD	R0, 16(R1)
+	MOVD	R0, 48(R1)
 	MOVD	$2, R20
 	TW	$31, R0, R0
 	RET

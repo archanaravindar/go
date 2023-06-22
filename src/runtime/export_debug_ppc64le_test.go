@@ -85,7 +85,7 @@ dumpregs(ctxt)
 func (h *debugCallHandler) debugCallPanicOut(ctxt *sigctxt) {
 	sp := ctxt.sp()
 	//println("debug call panic", hex(ctxt.pc()), hex(sp))
-	memmove(unsafe.Pointer(&h.panic), unsafe.Pointer(uintptr(sp)+8), 2*goarch.PtrSize)
+	memmove(unsafe.Pointer(&h.panic), unsafe.Pointer(uintptr(sp)+40), 2*goarch.PtrSize)
 	ctxt.set_pc(ctxt.pc() + 4)
 }
 
@@ -93,7 +93,7 @@ func (h *debugCallHandler) debugCallPanicOut(ctxt *sigctxt) {
 func (h *debugCallHandler) debugCallUnsafe(ctxt *sigctxt) {
 	sp := ctxt.sp()
 	//println("debug call unsafe", hex(ctxt.pc()), hex(sp))
-	reason := *(*string)(unsafe.Pointer(uintptr(sp) + 8))
+	reason := *(*string)(unsafe.Pointer(uintptr(sp) + 40))
 	h.err = plainError(reason)
 	ctxt.set_pc(ctxt.pc() + 4)
 }
