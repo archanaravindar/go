@@ -69,9 +69,6 @@ func startDebugCallWorker(t *testing.T) (g *runtime.G, after func()) {
 		debug.SetGCPercent(ogcpercent)
 	}
 }
-func dummyreturn() error {
-	return nil
-}
 
 func debugCallWorker(ready chan<- *runtime.G, stop *uint32, done chan<- error) {
 	runtime.LockOSThread()
@@ -83,8 +80,6 @@ func debugCallWorker(ready chan<- *runtime.G, stop *uint32, done chan<- error) {
 	debugCallWorker2(stop, &x)
 	if x != 1 {
 		done <- fmt.Errorf("want x = 2, got %d; register pointer not adjusted?", x)
-		//println("want x = 2, got ",x," ; register pointer not adjusted?", x)
-		//done <- dummyreturn()
 	}
 	close(done)
 }
