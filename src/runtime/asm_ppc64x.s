@@ -1076,7 +1076,7 @@ GLOBL	debugCallFrameTooLarge<>(SB), RODATA, $20	// Size duplicated below
 // goroutine stacks.
 TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
  	MOVD    0(R1), R31
-        MOVD    R31, -328(R1) // caller lr
+        MOVD    R31, -304(R1) // caller lr
 	MOVD	LR, R31
 	MOVD	R31, -320(R1)
 	ADD	$-320, R1
@@ -1139,6 +1139,7 @@ good:
 	BR	restore
 
 	MOVD	272(R1), R14 // the argument frame size
+	//MOVD	256(R1), R14 // the argument frame size
 	//MOVD	304(R1), R14 // the argument frame size
 //	MOVD	$0, R14 // the argument frame size
 
@@ -1201,7 +1202,7 @@ restore:
 	//MOVD	R31, LR
 	//ADD	$336, R1
 	//RET
-	MOVD    -8(R1), R31
+	MOVD    16(R1), R31
         MOVD    R31, LR // restore old lr
         MOVD    0(R1), CTR // caller PC
         ADD     $336, R1
