@@ -1075,8 +1075,11 @@ GLOBL	debugCallFrameTooLarge<>(SB), RODATA, $20	// Size duplicated below
 // This is ABIInternal because Go code injects its PC directly into new
 // goroutine stacks.
 TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
+	MOVD	R31, -184(R1) // save R31
  	MOVD    0(R1), R31
         MOVD    R31, -304(R1) // caller lr
+	MOVD    -16(R1), R31   // arg size
+	MOVD	R31, -192(R1)
 	MOVD	LR, R31
 	MOVD	R31, -320(R1)
 	ADD	$-320, R1
@@ -1092,8 +1095,7 @@ TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
 	MOVD	R9, 104(R1)
 	MOVD	R10, 112(R1)
 	MOVD	R11, 120(R1)
-	MOVD	R12, 128(R1)
-	MOVD	R13, 136(R1)
+	//MOVD	R12, 128(R1)
 	MOVD	R14, 144(R1)
 	MOVD	R15, 152(R1)
 	MOVD	R16, 160(R1)
@@ -1110,18 +1112,19 @@ TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
 	MOVD	R27, 248(R1)
 	MOVD	R28, 256(R1)
 	MOVD	g, 264(R1)
+	MOVD	R29, 280(R1)
 	MOVD	LR, R31
 	MOVD	R31, 32(R1)
 	CALL	runtime·debugCallCheck(SB)
-	//MOVD	16(R1), R14
-	MOVD	40(R1), R14
+	//MOVD	16(R1), R22
+	MOVD	40(R1), R22
 	XOR	R0, R0
-	CMP	R14, R0
+	CMP	R22, R0
 	BEQ	good
 	
-	//MOVD    R14, 8(R1)
-        MOVD    48(R1), R14
-        //MOVD    R14, 16(R1)
+	//MOVD    R22, 8(R1)
+        MOVD    48(R1), R22
+        //MOVD    R22, 16(R1)
 	
 	MOVD	$8, R20
 	TW	$31, R0, R0
@@ -1130,18 +1133,18 @@ TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
 	
 good:
 #define DEBUG_CALL_DISPATCH(NAME,MAXSIZE)	\
-	MOVD	$MAXSIZE, R15;			\
-	CMP	R15, R14;			\
+	MOVD	$MAXSIZE, R23;			\
+	CMP	R26, R23;			\
 	BGT	5(PC);				\
-	MOVD	$NAME(SB), R14;			\
-	MOVD	R14, 32(R1);			\
+	MOVD	$NAME(SB), R26;			\
+	MOVD	R26, 32(R1);			\
 	CALL	runtime·debugCallWrap(SB);	\
 	BR	restore
 
-	MOVD	272(R1), R14 // the argument frame size
-	//MOVD	256(R1), R14 // the argument frame size
-	//MOVD	304(R1), R14 // the argument frame size
-//	MOVD	$0, R14 // the argument frame size
+	//MOVD	272(R1), R26 // the argument frame size
+	MOVD	128(R1), R26 // the argument frame size
+	//MOVD	304(R1), R22 // the argument frame size
+//	MOVD	$0, R22 // the argument frame size
 
 	DEBUG_CALL_DISPATCH(debugCall32<>, 32)
 	DEBUG_CALL_DISPATCH(debugCall64<>, 64)
@@ -1156,10 +1159,10 @@ good:
 	DEBUG_CALL_DISPATCH(debugCall32768<>, 32768)
 	DEBUG_CALL_DISPATCH(debugCall65536<>, 65536)
 	// The frame size is too large. Report the error.
-	MOVD	$debugCallFrameTooLarge<>(SB), R14
-	MOVD	R14, 40(R1)
-	MOVD	$20, R14
-	MOVD	R14, 48(R1) // length of debugCallFrameTooLarge string
+	MOVD	$debugCallFrameTooLarge<>(SB), R22
+	MOVD	R22, 40(R1)
+	MOVD	$20, R22
+	MOVD	R22, 48(R1) // length of debugCallFrameTooLarge string
 	MOVD	$8, R20
 	TW	$31, R0, R0 // R0 has to be zero before this instn is executed 
 	BR	restore
@@ -1180,8 +1183,8 @@ restore:
 	MOVD	104(R1), R9
 	MOVD	112(R1), R10
 	MOVD    120(R1), R11
-	MOVD	128(R1), R12
-	MOVD	136(R1), R13
+	//MOVD	128(R1), R12
+	//MOVD	136(R1), R13
 	MOVD	144(R1), R14
 	MOVD	152(R1), R15
 	MOVD	160(R1), R16
@@ -1198,6 +1201,7 @@ restore:
 	MOVD	248(R1), R27
 	MOVD	256(R1), R28
 	MOVD	264(R1), g
+	MOVD	280(R1), R29
 	//MOVD	0(R1), R31
 	//MOVD	R31, LR
 	//ADD	$336, R1
@@ -1205,6 +1209,7 @@ restore:
 	MOVD    16(R1), R31
         MOVD    R31, LR // restore old lr
         MOVD    0(R1), CTR // caller PC
+	MOVD	136(R1), R31
         ADD     $336, R1
         JMP     (CTR)
 
@@ -1229,12 +1234,13 @@ DEBUG_CALL_FN(debugCall16384<>, 16384)
 DEBUG_CALL_FN(debugCall32768<>, 32768)
 DEBUG_CALL_FN(debugCall65536<>, 65536)
 
-TEXT runtime·debugCallPanicked(SB),NOSPLIT,$48-16
+// func debugCallPanicked(val interface{})
+TEXT runtime·debugCallPanicked(SB),NOSPLIT,$32-16
 	// Copy the panic value to the top of stack at SP+8.
-	MOVD	val_type+0(FP), R0
-	MOVD	R0, 40(R1)
-	MOVD	val_data+8(FP), R0
-	MOVD	R0, 48(R1)
+	MOVD	val_type+0(FP), R31
+	MOVD	R31, 32(R1)
+	MOVD	val_data+8(FP), R31
+	MOVD	R31, 40(R1)
 	MOVD	$2, R20
 	TW	$31, R0, R0
 	RET

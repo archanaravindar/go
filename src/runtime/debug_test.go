@@ -69,6 +69,9 @@ func startDebugCallWorker(t *testing.T) (g *runtime.G, after func()) {
 		debug.SetGCPercent(ogcpercent)
 	}
 }
+func dummyreturn() error {
+	return nil
+}
 
 func debugCallWorker(ready chan<- *runtime.G, stop *uint32, done chan<- error) {
 	runtime.LockOSThread()
@@ -80,6 +83,8 @@ func debugCallWorker(ready chan<- *runtime.G, stop *uint32, done chan<- error) {
 	debugCallWorker2(stop, &x)
 	if x != 1 {
 		done <- fmt.Errorf("want x = 2, got %d; register pointer not adjusted?", x)
+		//println("want x = 2, got ",x," ; register pointer not adjusted?", x)
+		//done <- dummyreturn()
 	}
 	close(done)
 }
@@ -195,6 +200,10 @@ func TestDebugCallLarge(t *testing.T) {
 
 	// Inject a call with a large call frame.
 	const N = 128
+	//const N = 10
+	//const N = 32
+	//const N = 3
+
 	var args struct {
 		in  [N]int
 		out [N]int
@@ -316,6 +325,7 @@ func TestDebugCallPanic(t *testing.T) {
 	}()
 	g := <-ready
 
+	//p, err := runtime.InjectDebugCall(g, func() {println("test") }, nil, nil, debugCallTKill, false)
 	p, err := runtime.InjectDebugCall(g, func() { panic("test") }, nil, nil, debugCallTKill, false)
 	if err != nil {
 		t.Fatal(err)
@@ -323,5 +333,6 @@ func TestDebugCallPanic(t *testing.T) {
 	if ps, ok := p.(string); !ok || ps != "test" {
 		t.Fatalf("wanted panic %v, got %v", "test", p)
 	}
-	//println("end of Debug CAll Panic")
+	///println("end of Debug CAll Panic")
 }
+

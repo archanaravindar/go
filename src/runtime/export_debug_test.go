@@ -53,7 +53,7 @@ func InjectDebugCall(gp *g, fn any, regArgs *abi.RegArgs, stackArgs any, tkill f
 	// it will run on since it's locked.
 	h.mp = gp.lockedm.ptr()
 	h.fv, h.regArgs, h.argp, h.argSize = fv, regArgs, argp, argSize
-	//println("coming here arg size: ", argSize)
+	println("coming here arg size: ", argSize)
 	//println("fv.fn" ,hex(fv.fn))
 	////println("fv fv.fn  ", hex((uint64)fv), hex((uint64)fv.fn))
 	////println("fv fv.fn regArgs argp ", hex((uint64)fv), hex((uint64)fv.fn),hex(uint64(regArgs)), hex(uint64(argp)))
@@ -70,7 +70,7 @@ func InjectDebugCall(gp *g, fn any, regArgs *abi.RegArgs, stackArgs any, tkill f
 		}
 		// Wait for completion.
 		notetsleepg(&h.done, -1)
-		//println("Output of inject call", h.err)
+		println("Output of inject call", h.err)
 		if h.err != "" {
 			switch h.err {
 			case "call not at safe point":
@@ -186,8 +186,8 @@ func (h *debugCallHandler) handle(info *siginfo, ctxt *sigctxt, gp2 *g) bool {
 		//println("case 8 debugCallUnsafe")
 		//println("unsafe func ", funcname(f)," PC =", hex(ctxt.sigpc()))
 		// Don't wake h.done. We need to transition to status 16 first.
-	//case 22:
-	//	//println("called debugcall* successfully")
+	case 22:
+		println("called debugcall* successfully")
 	//	h.restoreSigContext(ctxt)
 	//	notewakeup(&h.done)
 	case 16:
