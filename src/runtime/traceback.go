@@ -223,6 +223,7 @@ func (u *unwinder) initAt(pc0, sp0, lr0 uintptr, gp *g, flags unwindFlags) {
 	}
 
 	isSyscall := frame.pc == pc0 && frame.sp == sp0 && pc0 == gp.syscallpc && sp0 == gp.syscallsp
+	//println("calling resolveInternal 226")
 	u.resolveInternal(true, isSyscall)
 }
 
@@ -330,6 +331,7 @@ func (u *unwinder) resolveInternal(innermost, isSyscall bool) {
 			// On x86, call instruction pushes return PC before entering new function.
 			frame.fp += goarch.PtrSize
 		}
+		//println("setting frame fp to ",hex(frame.fp)," stack pointer ", hex(frame.sp))
 	}
 
 	// Derive link register.
@@ -375,6 +377,7 @@ func (u *unwinder) resolveInternal(innermost, isSyscall bool) {
 		}
 	}
 
+	//println("settng frame.varp to frame.fp ",hex(frame.varp), hex(frame.fp))
 	frame.varp = frame.fp
 	if !usesLR {
 		// On x86, call instruction pushes return PC before entering new function.
@@ -402,7 +405,9 @@ func (u *unwinder) resolveInternal(innermost, isSyscall bool) {
 		frame.varp -= goarch.PtrSize
 	}
 
+	//println("setting argp to FP+min frame size ",hex(frame.fp))
 	frame.argp = frame.fp + sys.MinFrameSize
+	//println(" argp ",hex(frame.argp))
 
 	// Determine frame's 'continuation PC', where it can continue.
 	// Normally this is the return address on the stack, but if sigpanic
@@ -434,11 +439,15 @@ func (u *unwinder) resolveInternal(innermost, isSyscall bool) {
 
 func (u *unwinder) next() {
 	frame := &u.frame
+//println("In Unwinder.next")
+//frame.dumpFrame()
+
 	f := frame.fn
 	gp := u.g.ptr()
 
 	// Do not unwind past the bottom of the stack.
 	if frame.lr == 0 {
+		//println("invokes finishInternal from here")
 		u.finishInternal()
 		return
 	}
@@ -464,6 +473,7 @@ func (u *unwinder) next() {
 		if fail {
 			throw("unknown caller pc")
 		}
+		//println("setting lr to 0 here and calling finishInternal")
 		frame.lr = 0
 		u.finishInternal()
 		return
@@ -489,13 +499,23 @@ func (u *unwinder) next() {
 	frame.pc = frame.lr
 	frame.lr = 0
 	frame.sp = frame.fp
+	//println("setting sp to fp ", hex(frame.sp), hex(frame.fp))
 	frame.fp = 0
+	//println("setting fp to 0 ")
 
 	// On link register architectures, sighandler saves the LR on stack
 	// before faking a call.
 	if usesLR && injectedCall {
 		x := *(*uintptr)(unsafe.Pointer(frame.sp))
-		frame.sp += alignUp(sys.MinFrameSize, sys.StackAlign)
+		if f.funcID==abi.FuncID_debugCallV2 {
+//			frame.sp += alignUp(sys.MinFrameSize, sys.StackAlign)
+			frame.sp += 2*goarch.PtrSize
+
+		} else {
+			frame.sp += alignUp(sys.MinFrameSize, sys.StackAlign)
+		}
+		println("incrementing sp by ",alignUp(sys.MinFrameSize, sys.StackAlign))
+
 		f = findfunc(frame.pc)
 		frame.fn = f
 		if !f.valid() {
@@ -505,6 +525,7 @@ func (u *unwinder) next() {
 		}
 	}
 
+	//println("calling resolveInternal 509")
 	u.resolveInternal(false, false)
 }
 
@@ -512,6 +533,7 @@ func (u *unwinder) next() {
 // exhausted. It sets the unwinder to an invalid state and checks that it
 // successfully unwound the entire stack.
 func (u *unwinder) finishInternal() {
+	//println("finish internal is invoked")
 	u.frame.pc = 0
 
 	// Note that panic != nil is okay here: there can be leftover panics,
@@ -615,6 +637,7 @@ func (u *unwinder) cgoCallers(pcBuf []uintptr) int {
 func tracebackPCs(u *unwinder, skip int, pcBuf []uintptr) int {
 	var cgoBuf [32]uintptr
 	n := 0
+	//println("calling next 620")
 	for ; n < len(pcBuf) && u.valid(); u.next() {
 		f := u.frame.fn
 		cgoN := u.cgoCallers(cgoBuf[:])
@@ -909,6 +932,7 @@ func traceback1(pc, sp, lr uintptr, gp *g, flags unwindFlags) {
 	var u unwinder
 	tracebackWithRuntime := func(showRuntime bool) int {
 		const maxInt int = 0x7fffffff
+		//println("initAt 924")
 		u.initAt(pc, sp, lr, gp, flags)
 		n, lastN := traceback2(&u, showRuntime, 0, tracebackInnerFrames)
 		if n < tracebackInnerFrames {
@@ -974,6 +998,7 @@ func traceback2(u *unwinder, showRuntime bool, skip, max int) (n, lastN int) {
 	gp := u.g.ptr()
 	level, _, _ := gotraceback()
 	var cgoBuf [32]uintptr
+	//println("calling next 980")
 	for ; u.valid(); u.next() {
 		lastN = 0
 		f := u.frame.fn
@@ -1096,6 +1121,7 @@ func callers(skip int, pcbuf []uintptr) int {
 	var n int
 	systemstack(func() {
 		var u unwinder
+		//println("initAt 1112")
 		u.initAt(pc, sp, 0, gp, unwindSilentErrors)
 		n = tracebackPCs(&u, skip, pcbuf)
 	})

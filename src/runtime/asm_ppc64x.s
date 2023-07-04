@@ -1160,9 +1160,9 @@ good:
 	DEBUG_CALL_DISPATCH(debugCall65536<>, 65536)
 	// The frame size is too large. Report the error.
 	MOVD	$debugCallFrameTooLarge<>(SB), R22
-	MOVD	R22, 40(R1)
+	MOVD	R22, 32(R1)
 	MOVD	$20, R22
-	MOVD	R22, 48(R1) // length of debugCallFrameTooLarge string
+	MOVD	R22, 40(R1) // length of debugCallFrameTooLarge string
 	MOVD	$8, R20
 	TW	$31, R0, R0 // R0 has to be zero before this instn is executed 
 	BR	restore
@@ -1183,8 +1183,8 @@ restore:
 	MOVD	104(R1), R9
 	MOVD	112(R1), R10
 	MOVD    120(R1), R11
-	//MOVD	128(R1), R12
-	//MOVD	136(R1), R13
+	//MOVD	128(R1), R12 // This is used to store arg frame size
+	//MOVD	136(R1), R13 // This is used to store R31
 	MOVD	144(R1), R14
 	MOVD	152(R1), R15
 	MOVD	160(R1), R16
@@ -1236,7 +1236,7 @@ DEBUG_CALL_FN(debugCall65536<>, 65536)
 
 // func debugCallPanicked(val interface{})
 TEXT runtime·debugCallPanicked(SB),NOSPLIT,$32-16
-	// Copy the panic value to the top of stack at SP+8.
+	// Copy the panic value to the top of stack at SP+32.
 	MOVD	val_type+0(FP), R31
 	MOVD	R31, 32(R1)
 	MOVD	val_data+8(FP), R31
