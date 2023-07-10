@@ -507,16 +507,7 @@ func (u *unwinder) next() {
 	// before faking a call.
 	if usesLR && injectedCall {
 		x := *(*uintptr)(unsafe.Pointer(frame.sp))
-		if f.funcID==abi.FuncID_debugCallV2 {
-			if GOARCH == "ppc64le" && GOOS == "linux" {
-				frame.sp += 2*goarch.PtrSize
-			} else {
-				frame.sp += alignUp(sys.MinFrameSize, sys.StackAlign)
-			}
-
-		} else {
-			frame.sp += alignUp(sys.MinFrameSize, sys.StackAlign)
-		}
+		frame.sp += alignUp(sys.MinFrameSize, sys.StackAlign)
 //		println("incrementing sp by ",alignUp(sys.MinFrameSize, sys.StackAlign))
 
 		f = findfunc(frame.pc)

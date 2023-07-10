@@ -1081,7 +1081,7 @@ TEXT runtime·debugCallV2<ABIInternal>(SB), NOSPLIT|NOFRAME, $0-0
 	MOVD	R31, -184(R1) // save R31
  	MOVD    0(R1), R31
         MOVD    R31, -304(R1) // caller lr
-	MOVD    -16(R1), R31   // arg size
+	MOVD    -32(R1), R31   // arg size
 	MOVD	R31, -192(R1)
 	MOVD	LR, R31
 	MOVD	R31, -320(R1)
@@ -1213,7 +1213,7 @@ restore:
         MOVD    R31, LR // restore old lr
         MOVD    0(R1), CTR // caller PC
 	MOVD	136(R1), R31
-        ADD     $336, R1
+        ADD     $352, R1
         JMP     (CTR)
 
 #define DEBUG_CALL_FN(NAME,MAXSIZE)	\
