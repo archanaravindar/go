@@ -98,7 +98,10 @@ nocgo:
 
 	// start this M
 	BL	runtime·mstart(SB)
-
+	// Prevent dead-code elimination of debugCallV2, which is
+	// intended to be called by debuggers.
+	MOVD	$runtime·debugCallV2<ABIInternal>(SB), R0
+	MOVD	$0, R0
 	MOVD	R0, 0(R0)
 	RET
 
@@ -1074,7 +1077,7 @@ GLOBL	debugCallFrameTooLarge<>(SB), RODATA, $20	// Size duplicated below
 //
 // This is ABIInternal because Go code injects its PC directly into new
 // goroutine stacks.
-TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0-0
+TEXT runtime·debugCallV2<ABIInternal>(SB), NOSPLIT|NOFRAME, $0-0
 	MOVD	R31, -184(R1) // save R31
  	MOVD    0(R1), R31
         MOVD    R31, -304(R1) // caller lr
@@ -1183,8 +1186,8 @@ restore:
 	MOVD	104(R1), R9
 	MOVD	112(R1), R10
 	MOVD    120(R1), R11
-	//MOVD	128(R1), R12 // This is used to store arg frame size
-	//MOVD	136(R1), R13 // This is used to store R31
+	//MOVD	128(R1), R12
+	//MOVD	136(R1), R13
 	MOVD	144(R1), R14
 	MOVD	152(R1), R15
 	MOVD	160(R1), R16
