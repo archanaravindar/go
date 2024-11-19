@@ -33,12 +33,15 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"math"
 	"math/big"
+	"math/bits"
 )
 
+type Choice bigmod.Choice
 var bigOne = big.NewInt(1)
 
 // A PublicKey represents the public part of an RSA key.
@@ -265,6 +268,57 @@ func (priv *PrivateKey) Validate() error {
 	}
 	return nil
 }
+// Cmp compares x and y and returns the result of the compare:
+// 1 if x > y
+// 0 if x == y
+// -1 if x < y
+func  Cmp(x *bigmod.Nat, y *bigmod.Nat) int {
+	if x.Equal(y) == 1 {
+		return 0
+	}
+	// Eliminate bounds checks in the loop.
+	size := len(x.Limbs)
+	xLimbs := x.Limbs[:size]
+	yLimbs := y.Limbs[:size]
+
+	var c uint
+	for i := 0; i < size; i++ {
+		_, c = bits.Sub(xLimbs[i], yLimbs[i], c)
+	}
+     res := 1
+        if c > 0 {
+                res = -1
+        }
+        return res
+
+}
+
+
+// basicMul calculates z <- x * y, modulo 2^max
+//
+// The capacity is given in bits, and also controls the size of the result.
+//
+// If cap < 0, the capacity will be x.AnnouncedLen() + y.AnnouncedLen()
+func basicMul(x *bigmod.Nat, y *bigmod.Nat, maxbits int) *bigmod.Nat {
+        if maxbits < 0 {
+                maxbits = x.Length() + y.Length()
+        }
+        size := limbCount(maxbits)
+        // Since we neex to set z to zero, we have no choice to use a new buffer,
+        // because we allow z to alias either of the arguments
+        zLimbs := make([]uint, size)
+        xLimbs := resizedLimbs(x, maxbits)
+        yLimbs := resizedLimbs(y, maxbits)
+        // LEAK: limbCount
+        // OK: the capacity is public, or should be
+        for i := 0; i < size; i++ {
+                addMulVVW(zLimbs[i:], xLimbs, yLimbs[i])
+        }
+	z:=bigmod.NewNat()
+        z.Limbs = zLimbs
+        z.Limbs = resizedLimbs(z, maxbits)
+        return z
+}
 
 // GenerateKey generates a random RSA private key of the given bit size.
 //
@@ -272,7 +326,1429 @@ func (priv *PrivateKey) Validate() error {
 // returned key does not depend deterministically on the bytes read from rand,
 // and may change between calls and/or between versions.
 func GenerateKey(random io.Reader, bits int) (*PrivateKey, error) {
-	return GenerateMultiPrimeKey(random, 2, bits)
+	if bits < 2048 {
+		return GenerateMultiPrimeKey(random, 2, bits)
+		//return nil, errors.New("crypto/rsa: bit size too small")
+	} 
+
+	priv := new(PrivateKey)
+	priv.E = 65537
+	// p and q
+	//primes := make([]*Nat, 2)
+	primes := make([]*big.Int, 2)
+	priv.Primes = primes
+
+	if priv.rsa_fips186_5_generate_prime_factors(bits) != nil {
+		return nil, errors.New("crypto/rsa: could not generate prime factors p,q")
+
+	}
+	//bigOneNat, err := bigmod.NewNat().SetBytes(bigOne.Bytes(), N)
+	//n := NewNat().set(bigOneNat)
+	n := new(big.Int).Set(bigOne)
+	//totient := NewNat().set(bigOneNat)
+   totient := new(big.Int).Set(bigOne)
+        pminus1 := new(big.Int)
+
+//	pminus1 := NewNat()
+	for _, prime := range primes {
+		n.Mul(n, prime)
+		pminus1.Sub(prime, bigOne)
+		totient.Mul(totient, pminus1)
+	}
+	priv.D = new(big.Int)
+	e := big.NewInt(int64(priv.E))
+	ok := priv.D.ModInverse(e, totient)
+
+	if ok != nil {
+		priv.N = n
+	} else {
+		return nil, errors.New("crypto/rsa: modulus error with public key exponent")
+	}
+	priv.PublicKey.N = n
+	priv.PublicKey.E = priv.E
+	priv.Precomputed = PrecomputedValues{Dp: nil, Dq: nil, Qinv: nil, CRTValues: make([]CRTValue, 0), n: nil, p: nil, q: nil}
+	priv.Precompute()
+	//fmt.Printf("P len %d Q Len %d\n", priv.Primes[0].BitLen(), priv.Primes[1].BitLen())
+	//pbytes:=priv.Primes[0].Bytes()
+	//qbytes:=priv.Primes[1].Bytes()
+	//fmt.Printf("P bytes %x..%x Q bytes %x .. %x\n", pbytes[0], pbytes[1], qbytes[0], qbytes[1])
+	return priv, nil
+}
+
+func diffcheck(p *bigmod.Nat, q *bigmod.Nat, bits int) bool {
+	// 2^(nlen/2)-100
+	limit := bigmod.NewNat().SetBig(new(big.Int).Lsh(bigOne, (uint)(bits>>1)-99))
+	var z *bigmod.Nat
+	if Cmp(p, q)  < 0 {
+		z.Set(p)
+		z.Sub(q)
+	} else {
+		z.Set(q)
+		z.Sub(p)
+	}
+	if Cmp(z, limit) <= 0 {
+		return true
+	} else {
+		return false
+	}
+}
+
+func rsa_fips186_5_aux_prime_MR_rounds(bits int) int {
+	if bits >= 4096 {
+		return 44
+	}
+	if bits >= 3072 {
+		return 41
+	}
+	if bits >= 2048 {
+		return 38
+	}
+	return 0
+}
+
+
+// ctGt checks x > y, returning 1 or 0
+//
+// This doesn't leak any information about either of them
+func ctGt(x, y uint) uint {
+        _, b := bits.Sub(uint(y), uint(x), 0)
+        return uint(b)
+}
+// ctCondCopy copies y into x, if v == 1, otherwise does nothing
+//
+// Both slices must have the same length.
+//
+// LEAK: the length of the slices
+//
+// Otherwise, which branch was taken isn't leaked
+func ctCondCopy(v uint, x, y []uint) {
+        if len(x) != len(y) {
+                panic("ctCondCopy: mismatched arguments")
+        }
+        for i := 0; i < len(x); i++ {
+                x[i] = ctIfElse(v, y[i], x[i])
+        }
+}
+
+// cmpGeq compares two limbs (same size) returning 1 if x >= y, and 0 otherwise
+func cmpGeq(x []uint, y []uint) uint {
+        var c uint
+        for i := 0; i < len(x) && i < len(y); i++ {
+                _, c = bits.Sub(uint(x[i]), uint(y[i]), c)
+        }
+        return 1 ^ uint(c)
+}
+
+// ctEq compares x and y for equality, returning 1 if equal, and 0 otherwise
+//
+// This doesn't leak any information about either of them
+func ctEq(x, y uint) uint {
+        // If x == y, then x ^ y should be all zero bits.
+        q := uint(x ^ y)
+        // For any q != 0, either the MSB of q, or the MSB of -q is 1.
+        // We can thus or those together, and check the top bit. When q is zero,
+        // that means that x and y are equal, so we negate that top bit.
+        return 1 ^ ((q|-q)>>(_W-1)) 
+}
+
+
+func  (x* bigmod.Nat) CondSwap(cond uint, y *bigmod.Nat, m *bigmod.Modulus) {
+  for i:=0; i< len(x.Limbs) && i< len(y.Limbs) ; i++ {
+      xi := x.Limbs[i]
+      x.Limbs[i] = ctIfElse(cond, y.Limbs[i], xi)
+      y.Limbs[i] = ctIfElse(cond, xi, y.Limbs[i])
+  }
+}
+
+// ctIfElse selects x if v = true, and y otherwise
+//
+// This doesn't leak the value of any of its inputs
+func ctIfElse(v uint, x, y uint) uint {
+        // mask should be all 1s if v is 1, otherwise all 0s
+        mask := -uint(v)
+        return y ^ (mask & (y ^ x))
+}
+
+// topLimbs finds the most significant _W bits of a and b
+//
+// This function assumes that a and b have the same length.
+//
+// By this, we mean aligning a and b, and then reading down _W bits starting
+// from the first bit that a or b have set.
+func rsa_topLimbs(a, b []uint) (uint, uint) {
+        // explicitly checking this avoids indexing checks later too
+        if len(a) != len(b) {
+                panic("topLimbs: mismatched arguments")
+        }
+        // We lookup pairs of elements from top to bottom, until a1 or b1 != 0
+        var a1, a0, b1, b0 Word
+        done := 0
+        for i := len(a) - 1; i > 0; i-- {
+                a1 = ctIfElse(done, a1, a[i])
+                a0 = ctIfElse(done, a0, a[i-1])
+                b1 = ctIfElse(done, b1, b[i])
+                b0 = ctIfElse(done, b0, b[i-1])
+                done = 1 ^ ctEq(a1|b1, 0)
+        }
+        // Now, we look at the leading zeros to make sure that we're looking at the top
+        // bits completely.
+
+        // Converting to Word avoids a panic check
+        l := uint(leadingZeros(a1 | b1))
+        return (a1 << l) | (a0 >> (_W - l)), (b1 << l) | (b0 >> (_W - l))
+}
+
+// conditionally negate a slice of words based on two's complement
+func negateTwos(doit uint, z []uint) {
+        if len(z) <= 0 {
+                return
+        }
+        sign := uint(doit)
+        zi, carry := bits.Add(uint(-sign^z[0]), uint(sign), 0)
+        z[0] = uint(zi)
+        for i := 1; i < len(z); i++ {
+                zi, carry = bits.Add(uint(-sign^z[i]), 0, carry)
+                z[i] = uint(zi)
+        }
+}
+
+// mixSigned calculates a <- alpha * a + beta * b, returning whether the result is negative.
+//
+// alpha and beta are signed integers, but whose absolute value is < 2^(_W / 2).
+// They're represented in two's complement.
+//
+// a and b both have an extra limb. We use the extra limb of a to store the full
+// result.
+func mixSigned(a, b []uint, alpha, beta uint) Choice {
+        // Get the sign and absolute value for alpha
+        alphaNeg := alpha >> (_W - 1)
+        alpha = (alpha ^ -alphaNeg) + alphaNeg
+        // Get the sign and absolute value for beta
+        betaNeg := beta >> (_W - 1)
+        beta = (beta ^ -betaNeg) + betaNeg
+
+        // Our strategy for representing the result is to use a two's complement
+        // representation alongside an extra limb.
+
+        // Multiply a by alpha
+        var cc uint
+        for i := 0; i < len(a)-1; i++ {
+                cc, a[i] = mulAddWWW_g(alpha, a[i], cc)
+        }
+        a[len(a)-1] = cc
+        // Correct for sign
+        negateTwos(Choice(alphaNeg), a)
+
+	       // We want to do the same for b, and then add it to a, but without
+        // creating a temporary array
+        var mulCarry, negCarry, addCarry, si Word
+        mulCarry, si = mulAddWWW_g(beta, b[0], 0)
+        si, negCarry = add(si^-betaNeg, betaNeg, 0)
+        a[0], addCarry = add(a[0], si, 0)
+        for i := 1; i < len(b)-1; i++ {
+                mulCarry, si = mulAddWWW_g(beta, b[i], mulCarry)
+                si, negCarry = add(si^-betaNeg, 0, negCarry)
+                a[i], addCarry = add(a[i], si, addCarry)
+        }
+        si, _ = add(mulCarry^-betaNeg, 0, negCarry)
+        a[len(a)-1], _ = add(a[len(a)-1], si, addCarry)
+
+        outNeg := uint(a[len(a)-1] >> (_W - 1))
+        negateTwos(outNeg, a)
+
+        return outNeg
+}
+// "Missing" Functions
+// These are routines that could in theory be implemented in assembly,
+// but aren't already present in Go's big number routines
+
+// div calculates the quotient and remainder of hi:lo / d
+//
+// Unlike bits.Div, this doesn't leak anything about the inputs
+func div(hi, lo, d uint) (uint, uint) {
+        var quo uint
+        hi = ctIfElse(ctEq(hi, d), 0, hi)
+        for i := _W - 1; i > 0; i-- {
+                j := _W - i
+                w := (hi << j) | (lo >> i)
+                sel := ctEq(w, d) | ctGt(w, d) | uint(hi>>i)
+                hi2 := (w - d) >> j
+                lo2 := lo - (d << i)
+                hi = ctIfElse(sel, hi2, hi)
+                lo = ctIfElse(sel, lo2, lo)
+                quo |= uint(sel)
+                quo <<= 1
+        }
+        sel := ctEq(lo, d) | ctGt(lo, d) | Choice(hi)
+        quo |= uint(sel)
+        rem := ctIfElse(sel, lo-d, lo)
+        return quo, rem
+}
+
+// divDouble divides x by d, outputtting the quotient in out, and a remainder
+//
+// This routine assumes nothing about the padding of either of its inputs, and
+// leaks nothing beyond their announced length.
+//
+// If out is not empty, it's assumed that x has at most twice the bit length of d,
+// and the quotient can thus fit in a slice the length of d, which out is assumed to be.
+//
+// If out is nil, no quotient is produced, but the remainder is still calculated.
+// This remainder will be correct regardless of the size difference between x and d.
+func divNat(x *bigmod.Nat, d *bigmod.Nat, out *bigmod.Nat) *bigmod.Nat {
+        size := d.Length()
+	r:=bigmod.NewNat().reset(d)
+	scratch:=bigmod.NewNat().reset(d)
+
+        // We use free injection, like in Mod
+        i := x.Length() - 1
+        // We can inject at least size - 1 limbs while staying under m
+        // Thus, we start injecting from index size - 2
+        start := size - 2
+        // That is, if there are at least that many limbs to choose from
+        if i < start {
+                start = i
+        }
+        for j := start; j >= 0; j-- {
+                r.Limbs[j] = x.Limbs[i]
+                i--
+        }
+
+        for ; i >= 0; i-- {
+                oi := shiftAddInGeneric(r, scratch, x.Limbs[i], d)
+                // Hopefully the branch predictor can make these checks not too expensive,
+                // otherwise we'll have to duplicate the routine
+                if out != nil {
+                        out.Limbs[i] = oi
+                }
+        }
+        return r
+}
+
+
+// shiftAddInCommon exists to unify behavior between shiftAddIn and shiftAddInGeneric
+//
+// z, scratch, and m should have the same length.
+//
+// The two functions differ only in how the calculate a1:a0, and b0.
+//
+// hi should be what was previously the top limb of z.
+//
+// a1:a0 and b0 should be the most significant two limbs of z, and single limb of m,
+// after shifting to discard leading zeros.
+//
+// The way these are calculated differs between the two versions of shiftAddIn,
+// which is why this function exists.
+func shiftAddInCommon(z, scratch, m []uint, hi, a1, a0, b0 uint) (q uint) {
+        // We want to use a1:a0 / b0 - 1 as our estimate. If rawQ is 0, we should
+        // use 0 as our estimate. Another edge case when an overflow happens in the quotient.
+        // It can be shown that this happens when a1 == b0. In this case, we want
+        // to use the maximum value for q
+        rawQ, _ := div(a1, a0, b0)
+        q = ctIfElse(ctEq(a1, b0), ^uint(0), ctIfElse(ctEq(rawQ, 0), 0, rawQ-1))
+
+        // This estimate is off by +- 1, so we subtract q * m, and then either add
+        // or subtract m, based on the result.
+        c := mulSubVVW(z, m, q)
+        // If the carry from subtraction is greater than the limb of z we've shifted out,
+        // then we've underflowed, and need to add in m
+        under := ctGt(c, hi)
+        // For us to be too large, we first need to not be too low, as per the previous flag.
+        // Then, if the lower limbs of z are still larger, or the top limb of z is equal to the carry,
+        // we can conclude that we're too large, and need to subtract m
+        stillBigger := cmpGeq(z, m)
+        over := (1 ^ under) & (stillBigger | (1 ^ ctEq(c, hi)))
+        addVV(scratch, z, m)
+        ctCondCopy(under, z, scratch)
+        q -= uint(under)
+        subVV(scratch, z, m)
+        ctCondCopy(over, z, scratch)
+        q += uint(over)
+        return
+}
+
+
+// shiftAddInGeneric is like shiftAddIn, but works with arbitrary m.
+//
+// See shiftAddIn for what this function is trying to accomplish, and what the
+// inputs represent.
+//
+// The big difference this entails is that z and m may have padding limbs, so
+// we have to do a bit more work to recover their significant bits in constant-time.
+func shiftAddInGeneric(z, scratch []uint, x uint, m *bigmod.Nat) uint {
+        size := m.Length()
+        if size == 0 {
+                return 0
+        }
+        if size == 1 {
+                // In this case, z:x (/, %) m is exactly what we need to calculate
+                q, r := div(z[0], x, m.GetWord(0))
+                z[0] = r
+                return q
+        }
+
+        // We need to get match the two most significant 2 * _W bits of z with the most significant
+        // _W bits of m. We also need to eliminate any leading zeros, possibly fetching a
+        // these bits over multiple limbs. Because of this, we need to scan over both
+        // arrays, with a window of 3 limbs for z, and 2 limbs for m, until we hit the
+        // first non-zero limb for either of them. Because z < m, it suffices to check
+        // for a non-zero limb from m.
+        var a2, a1, a0, b1, b0 uint
+        done := uint(0)
+        for i := size - 1; i > 1; i-- {
+             a2 = ctIfElse(done, a2, z[i])
+                a1 = ctIfElse(done, a1, z[i-1])
+                a0 = ctIfElse(done, a0, z[i-2])
+                b1 = ctIfElse(done, b1, m.GetWord(i))
+                b0 = ctIfElse(done, b0, m.GetWord(i-1))
+                done = 1 ^ ctEq(b1, 0)
+        }
+        // We also need to do one more iteration to potentially include x inside of our
+        // significant bits from z.
+        a2 = ctIfElse(done, a2, z[1])
+        a1 = ctIfElse(done, a1, z[0])
+        a0 = ctIfElse(done, a0, x)
+        b1 = ctIfElse(done, b1, m.GetWord(1))
+        b0 = ctIfElse(done, b0, m.GetWord(0))
+        // Now, we need to shift away the leading zeros to get the most significant bits.
+        // Converting to uint avoids a panic check
+        l := uint(leadingZeros(b1))
+        a2 = (a2 << l) | (a1 >> (_W - l))
+        a1 = (a1 << l) | (a0 >> (_W - l))
+        b1 = (b1 << l) | (b0 >> (_W - l))
+
+        // Another adjustment we need to make before calling the next function is to actually
+        // insert x inside of z, shifting out hi.
+        hi := z[len(z)-1]
+        for i := size - 1; i > 0; i-- {
+                z[i] = z[i-1]
+        }
+        z[0] = x
+
+        return shiftAddInCommon(z, scratch, m.slice(0,m.Length()), hi, a2, a1, b1)
+}
+
+func same(x, y *bigmod.Nat) bool {
+        return x.Length() == y.Length() && x.Length() > 0 && &x.Limbs[0] == &y.Limbs[0]
+}
+
+// alias reports whether x and y share the same base array.
+//
+// Note: alias assumes that the capacity of underlying arrays
+// is never changed for nat values; i.e. that there are
+// no 3-operand slice expressions in this code (or worse,
+// reflect-based operations to the same effect).
+func alias(x, y nat) bool {
+        return cap(x.Limbs) > 0 && cap(y.Limbs) > 0 && &x[0:cap(x.Limbs)][cap(x.Limbs)-1] == &y[0:cap(y.Limbs)][cap(y.Limbs)-1]
+}
+
+
+// z = x << s
+func (z *bigmod.Nat) shl(x *bigmod.Nat, s uint) *bigmod.Nat {
+        if s == 0 {
+                if same(z, x) {
+                        return z
+                }
+                if !alias(z, x) {
+                        return z.set(x)
+                }
+        }
+
+        m := x.Length()
+        if m == 0 {
+                return z.reset(0)
+        }
+        // m > 0
+
+        n := m + int(s/_W)
+        zl = z.slice(0,n + 1)
+        z.setWord(n, shlVU(z[n-m:n], x, s%_W))
+        z.clearWords(0, n-m)
+
+        return z.norm()
+}
+
+func (z* bigmod.Nat) copyLimbs(c []uint) {
+	for i:=0; i<z.Length(); i++ {
+		z.Limbs[i]=c[i]
+	}
+}
+// shr calculates z <- x >> s, producing a certain number of bits
+func shr(z *bigmod.Nat, x *bigmod.Nat, s uint) *bigmod.Nat {
+        if s == 0 {
+                if same(z, x) {
+                        return z
+                }
+                if !alias(z, x) {
+                        return z.set(x)
+                }
+        }
+
+        m := x.Length()
+        n := m - int(s/_W)
+        if n <= 0 {
+                return z.reset(0)
+        }
+        // n > 0
+
+        zl = z.slice(0,n)
+        shrVU(zl, x.slice(m-n,m), s%_W)
+	if z.Length() < n {
+		z.copyLimbs(zl)
+	} else {
+	       panic("not enough contents to copy in shift right")
+	}
+
+        return z.norm()
+}
+
+func (z *bigmod.Nat) norm() *bigmod.Nat {
+        i := z.Length()
+        for i > 0 && z.Limbs[i-1] == 0 {
+                i--
+        }
+	nm := bigmod.NewNat().set(z)
+	for k := i; k < nm.Length(); k++ {
+		nm.setWord(k, 0)
+	}
+        return nm
+}
+
+// bitLen returns the length of x in bits.
+// Unlike most methods, it works even if x is not normalized.
+func (x *bigmod.Nat) bitLen() int {
+        // This function is used in cryptographic operations. It must not leak
+        // anything but the Int's sign and bit size through side-channels. Any
+        // changes must be reviewed by a security expert.
+        if i := x.Length() - 1; i >= 0 {
+                // bits.Len uses a lookup table for the low-order bits on some
+                // architectures. Neutralize any input-dependent behavior by setting all
+                // bits after the first one bit.
+                top := uint(x.Limbs[i])
+                top |= top >> 1
+                top |= top >> 2
+                top |= top >> 4
+                top |= top >> 8
+                top |= top >> 16
+                top |= top >> 16 >> 16 // ">> 32" doesn't compile on 32-bit architectures
+                return i*_W + bits.Len(top)
+        }
+        return 0
+}
+
+// random creates a random integer in [0..limit), using the space in z if
+// possible. n is the bit length of limit.
+func (z *bigmod.Nat) random(rand *rand.Rand, limit *bigmod.Nat, n int) *bigmod.Nat {
+        if alias(z, limit) {
+                z = nil // z is an alias for limit - cannot reuse
+        }
+        z = z.reset(limit.Length())
+
+        bitLengthOfMSW := uint(n % _W)
+        if bitLengthOfMSW == 0 {
+                bitLengthOfMSW = _W
+        }
+        mask := uint((1 << bitLengthOfMSW) - 1)
+
+        for {
+                switch _W {
+                case 32:
+                        for i := range z {
+                                z[i] = uint(rand.Uint32())
+                        }
+                case 64:
+                        for i := range z {
+                                z[i] = uint(rand.Uint32()) | uint(rand.Uint32())<<32
+                        }
+                default:
+                        panic("unknown word size")
+                }
+                z[limit.Length()-1] &= mask
+                if z.cmp(limit) < 0 {
+                        break
+                }
+        }
+
+        return z.norm()
+}
+
+
+// probablyPrimeMillerRabin reports whether n passes reps rounds of the
+// Miller-Rabin primality test, using pseudo-randomly chosen bases.
+// If force2 is true, one of the rounds is forced to use base 2.
+// See Handbook of Applied Cryptography, p. 139, Algorithm 4.24.
+// The number n is known to be non-zero.
+func (n *bigmod.Nat) probablyPrimeMillerRabin(reps int, force2 bool) bool {
+	nm1 := bigmod.NewNat().set(n)
+        nm1.sub(natOne)
+        // determine q, k such that nm1 = q << k
+        k := nm1.trailingZeroBits()
+        q := shr(bigmod.NewNat(), nm1, k)
+
+	nm3 := bigmod.NewNat().set(nm1)
+        nm3.sub(nm1, natTwo)
+        rand := rand.New(rand.NewSource(int64(n[0])))
+
+        var x, y, quotient *nat
+        nm3Len := nm3.bitLen()
+	nmod := bigmod.NewModulus(n.Bytes())
+
+NextRandom:
+        for i := 0; i < reps; i++ {
+                if i == reps-1 && force2 {
+                        x = bigmod.NewNat().set(natTwo)
+                } else {
+                        x = x.random(rand, nm3, nm3Len)
+                        x = x.add(x, natTwo)
+                }
+                y = y.Exp(x, q.Bytes(), nmod)
+		               if y.cmp(natOne) == 0 || y.cmp(nm1) == 0 {
+                        continue
+                }
+                for j := uint(1); j < k; j++ {
+                        //y = y.basicMul(y,y,n.bitLen())
+                        y = y.Mul(y,y,nmod)
+                        y = divNat(y, n, nil)
+                        if y.cmp(nm1) == 0 {
+                                continue NextRandom
+                        }
+                        if y.cmp(natOne) == 0 {
+                                return false
+                        }
+                }
+                return false
+        }
+
+        return true
+}
+
+
+
+// cmpZero checks if a slice is equal to zero, in constant time
+//
+// LEAK: the length of a
+func cmpZero(a []uint) Choice {
+        var v uint
+        for i := 0; i < len(a); i++ {
+                v |= a[i]
+        }
+        return ctEq(v, 0)
+}
+
+// resizedLimbs returns a new slice of limbs accomodating a number of bits.
+//
+// This will clear out the end of the slice as necessary.
+//
+// LEAK: the current number of limbs, and bits
+// OK: both are public
+func  resizedLimbs(z *bigmod.Nat, bits int) []uint {
+        size := limbCount(bits)
+        z.ensureLimbCapacity(size)
+        res := z.Limbs[:size]
+        // Make sure that the expansion (if any) is cleared
+        for i := len(z.Limbs); i < size; i++ {
+                res[i] = 0
+        }
+        maskEnd(res, bits)
+        return res
+}
+
+const _WMask = _W - 1
+
+// limbMask returns the mask used for the final limb of a Nat with this number of bits.
+//
+// Note that this function will leak the number of bits. For our library, this isn't
+// a problem, since we always call this function with announced sizes.
+func limbMask(bits int) uint {
+        remaining := bits & _WMask
+        allOnes := ^uint(0)
+        if remaining == 0 {
+                return allOnes
+        }
+        return ^(allOnes << remaining)
+}
+
+
+// maskEnd applies the correct bit mask to some limbs
+func (z* bigmod.Nat) maskEnd(bits int) {
+        if z.Length() <= 0 {
+                return
+        }
+        z.Limbs[z.Length()-1] &= limbMask(bits)
+}
+
+func (z *bigmod.Nat) resizeBits(newbits int) *bigmod.Nat {
+	newlimbs := limbCount(newbits)
+	z.expand(newlimbs)
+	res:=bigmod.NewNat().reset(newlimbs)
+	maskEnd(res, newbits)
+        return z
+}
+
+// limbCount returns the number of limbs needed to accomodate bits.
+func limbCount(bits int) int {
+	const _WShift = 5 + (_W >> 6)
+        return (bits + _W - 1) >> _WShift
+}
+
+
+func (z *bigmod.Nat) invert(announced int, x *bigmod.Nat, m *bigmod.Nat, m0inv uint) bool {
+        // This function follows Thomas Pornin's optimized GCD method:
+        //   https://eprint.iacr.org/2020/972
+        if x.Length() != m.Length() {
+                panic("invert: mismatched arguments")
+        }
+
+        size := m.Length()
+        // We need 4 normal buffers, and one scratch buffer.
+        // We make each of them have an extra limb, because our updates produce an extra
+        // _W / 2 bits or so, before shifting, or modular reduction, and it's convenient
+        // to do these "large" updates in place.
+	newsize := _W * 5 * (size+1)
+	if newsize > z.Length() {
+		z.expand(newsize)
+	}
+        // v = 0, u = 1, a = x, b = m
+        v := z.slice(0,size+1)
+        u := z.slice(size+1,2*(size+1))
+	 for i := 0; i < size; i++ {
+                u[i] = 0
+                v[i] = 0
+        }
+        u[0] = 1
+
+	a := z.slice(3*(size+1),4*(size+1))
+        copy(a, x)
+        b := z.slice(2*(size+1),3*(size+1))
+        copy(b, m)
+        scratch := z.slice(4*(size+1),z.Length())
+	// k is half of our limb size
+        //
+        // We do k - 1 inner iterations inside our loop.
+        const k = _W >> 1
+        // kMask allows us to keep only this half of a limb
+        const kMask = (1 << k) - 1
+        // iterMask allows us to mask off first (k - 1) bits, which is useful, since
+        // that's how many inner iterations we have.
+        const iterMask = uint((1 << (k - 1)) - 1)
+        // The minimum number of iterations is 2 * announced - 1. So, we calculate
+        // the ceiling of this quantity divided by (k - 1), since that's the number
+        // of iterations we do inside the inner loop
+	iterations := ((2*announced - 1) + k - 2) / (k - 1)
+        for i := 0; i < iterations; i++ {
+                // The core idea is to use an approximation of a and b to calculate update
+                // factors. We want to use the low k - 1 bits, combined with the high k + 1 bits.
+                // This is because the low k - 1 bits suffice to give us odd / even information
+                // for our k - 1 iterations, and the remaining high bits allow us to check
+                // a < b as well.
+                aBar := a[0]
+                bBar := b[0]
+                if size > 1 {
+                        aTop, bTop := topLimbs(a[:size], b[:size])
+                        aBar = (iterMask & aBar) | (^iterMask & aTop)
+                        bBar = (iterMask & bBar) | (^iterMask & bTop)
+                }
+// We store two factors in a single register, to make the inner loop faster.
+                //
+                //  fg = f + (2^(k-1) - 1) + 2^k(g + (2^(k-1) - 1))
+                //
+                // The reason we add in 2^(k-1) - 1, is so that the result in each half
+                // doesn't go negative. We then subtract this factor away when extracting
+                // the coefficients.
+
+                // This factor needs to be added when we subtract one double register from
+                // another, and vice versa.
+                const coefficientAdjust = iterMask * ((1 << k) + 1)
+                fg0 := uint(1) + coefficientAdjust
+                fg1 := uint(1<<k) + coefficientAdjust
+  		for j := 0; j < k-1; j++ {
+                        // Note: inlining the ctIfElse's produces worse assembly, for some reason;
+                        // there's a lot more register spilling.
+                        acp := aBar
+                        bcp := bBar
+                        fg0cp := fg0
+                        fg1cp := fg1
+
+                        _, carry := bits.Sub(uint(aBar), uint(bBar), 0)
+                        aSmaller := uint(carry)
+                        aBar = ctIfElse(aSmaller, bcp, aBar)
+                        bBar = ctIfElse(aSmaller, acp, bBar)
+                        fg0 = ctIfElse(aSmaller, fg1cp, fg0)
+                        fg1 = ctIfElse(aSmaller, fg0cp, fg1)
+
+                        aBar -= bBar
+                        fg0 -= fg1
+                        fg0 += coefficientAdjust
+
+                        aOdd := uint(acp & 1)
+                        aBar = ctIfElse(aOdd, aBar, acp)
+                        bBar = ctIfElse(aOdd, bBar, bcp)
+                        fg0 = ctIfElse(aOdd, fg0, fg0cp)
+                        fg1 = ctIfElse(aOdd, fg1, fg1cp)
+
+                        aBar >>= 1
+                        fg1 += fg1
+                        fg1 -= coefficientAdjust
+                }
+		 // Extract out the actual coefficients, as per the previous discussion.
+                f0 := (fg0 & kMask) - iterMask
+                g0 := (fg0 >> k) - iterMask
+                f1 := (fg1 & kMask) - iterMask
+                g1 := (fg1 >> k) - iterMask
+
+                // a, b <- (f0 * a + g0 * b), (f1 * a + g1 * b)
+                copy(scratch, a)
+                aNeg := uint(mixSigned(a, b, f0, g0))
+                bNeg := uint(mixSigned(b, scratch, g1, f1))
+                // This will always clear the low k - 1 bits, so we shift those away
+                shrVU(a, a, k-1)
+                shrVU(b, b, k-1)
+                // The result may have been negative, in which case we need to negate
+                // the coefficients for the updates to u and v.
+                f0 = (f0 ^ -aNeg) + aNeg
+                g0 = (g0 ^ -aNeg) + aNeg
+                f1 = (f1 ^ -bNeg) + bNeg
+                g1 = (g1 ^ -bNeg) + bNeg
+
+		   // u, v <- (f0 * u + g0 * v), (f1 * u + g1 * v)
+                copy(scratch, u)
+                uNeg := mixSigned(u, v, f0, g0)
+                vNeg := mixSigned(v, scratch, g1, f1)
+
+                // Now, reduce u and v mod m, making sure to conditionally negate the result.
+                u0 := u[0]
+                copy(u, u[1:])
+                shiftAddInGeneric(u[:size], scratch[:size], u0, m)
+                subVV(scratch[:size], m, u[:size])
+                ctCondCopy(uNeg&(1^cmpZero(u)), u[:size], scratch[:size])
+
+                v0 := v[0]
+                copy(v, v[1:])
+                shiftAddInGeneric(v[:size], scratch[:size], v0, m)
+                subVV(scratch[:size], m, v[:size])
+                ctCondCopy(vNeg&(1^cmpZero(v)), v[:size], scratch[:size])
+        }
+	// v now contains our inverse, multiplied by 2^(iterations). We need to correct
+        // this by dividing by 2. We can use the same trick as in montgomery multiplication,
+        // adding the correct multiple of m to clear the low bits, and then shifting
+        totalIterations := iterations * (k - 1)
+        // First, we try and do _W / 2 bits at a time. This is a convenient amount,
+        // because then the coefficient only occupies a single limb.
+        for i := 0; i < totalIterations/k; i++ {
+                v[size] = addMulVVW(v[:size], m, (m0inv*v[0])&kMask)
+                shrVU(v, v, k)
+        }
+        // If there are any iterations remaining, we can take care of them by clearing
+        // a smaller number of bits.
+        remaining := totalIterations % k
+        if remaining > 0 {
+                lastMask := Word((1 << remaining) - 1)
+                v[size] = addMulVVW(v[:size], m, (m0inv*v[0])&lastMask)
+                shrVU(v, v, uint(remaining))
+        }
+
+        z.resizeBits(announced)
+        // Inversion succeeded if b, which contains gcd(x, m), is 1.
+        return cmpZero(b[1:]) & ctEq(1, b[0])
+}
+
+
+
+// invertModW calculates x^-1 mod _W
+func invertModW(x uint) Word {
+        y := x
+        // This is enough for 64 bits, and the extra iteration is not that costly for 32
+        for i := 0; i < 5; i++ {
+                y = y * (2 - x*y)
+        }
+        return y
+}     
+
+
+func rsa_coprime(x* bigmod.Nat, y *bigmod.Nat, m *Modulus) Choice {
+	size := x.MaxLen(y)
+	if size == 0 {
+                // technically the result should be 1 since 0 is not a divisor,
+                // but we expect 0 when both arguments are equal.
+                return 0
+        }
+	a:=bigmod.NewNat().set(x)
+	b:=bigmod.NewNat().set(y)
+	if x.Length() > y.Length() {
+		b.expand(size)
+	} else {
+		a.expand(size)
+	}
+	aOdd := (uint)(a.GetWord(0)&1)
+	a.CondSwap(aOdd, b, m)
+	scratch := bigmod.NewNat()
+	bOdd := (uint)(b.GetWord(0)&1)
+	b.OrWord(0,1)
+        invertible := scratch.invert(size, a, b, -invertModW(b.GetWord(0)))
+	return (aOdd | bOdd)&invertible
+
+}
+
+// convert32 represents this number as uint32
+//
+// The behavior of this function is undefined if the number of limbs is > 4
+func convert32(words []byte) uint32 {
+        var ret uint32
+        for i := words.Length() - 1; i >= 0; i-- {
+                ret = (ret << _W) | uint32(z[i])
+        }
+        return ret
+}
+
+// convert64 represents this number as uint64
+//
+// The behavior of this function is undefined if the number of limbs is > 4
+func convert64(words []byte) uint64 {
+        var ret uint64
+        for i := words.Length() - 1; i >= 0; i-- {
+                ret = (ret << _W) | uint64(z[i])
+        }
+        return ret
+}
+
+// ProbablyPrime reports whether x is probably prime,
+// applying the Miller-Rabin test with n pseudorandomly chosen bases
+// as well as a Baillie-PSW test.
+//
+// If x is prime, ProbablyPrime returns true.
+// If x is chosen randomly and not prime, ProbablyPrime probably returns false.
+// The probability of returning true for a randomly chosen non-prime is at most ¼ⁿ.
+//
+// ProbablyPrime is 100% accurate for inputs less than 2⁶⁴.
+// See Menezes et al., Handbook of Applied Cryptography, 1997, pp. 145-149,
+// and FIPS 186-4 Appendix F for further discussion of the error probabilities.
+//
+// ProbablyPrime is not suitable for judging primes that an adversary may
+// have crafted to fool the test.
+//
+// As of Go 1.8, ProbablyPrime(0) is allowed and applies only a Baillie-PSW test.
+// Before Go 1.8, ProbablyPrime applied only the Miller-Rabin tests, and ProbablyPrime(0) panicked.
+
+func (x *bigmod.Nat) rsa_probablyPrime(n int) bool {
+        // Note regarding the doc comment above:
+        // It would be more precise to say that the Baillie-PSW test uses the
+        // extra strong Lucas test as its Lucas test, but since no one knows
+        // how to tell any of the Lucas tests apart inside a Baillie-PSW test
+        // (they all work equally well empirically), that detail need not be
+        // documented or implicitly guaranteed.
+        // The comment does avoid saying "the" Baillie-PSW test
+        // because of this general ambiguity.
+
+        const _B = 1 << _W       // digit base
+        const _M = _B - 1        // digit mask
+
+        if n < 0 {
+                panic("negative n for ProbablyPrime")
+        }
+        if x.Length() == 0 {
+                return false
+        }
+
+        // primeBitMask records the primes < 64.
+        const primeBitMask uint64 = 1<<2 | 1<<3 | 1<<5 | 1<<7 |
+                1<<11 | 1<<13 | 1<<17 | 1<<19 | 1<<23 | 1<<29 | 1<<31 |
+                1<<37 | 1<<41 | 1<<43 | 1<<47 | 1<<53 | 1<<59 | 1<<61
+
+        w := x.getWord(0)
+        if x.Length() == 1 && w < 64 {
+                return primeBitMask&(1<<w) != 0
+        }
+
+        if w&1 == 0 {
+		 return false // x is even
+        }
+
+       const primesA = 3 * 5 * 7 * 11 * 13 * 17 * 19 * 23 * 37
+        const primesB = 29 * 31 * 41 * 43 * 47 * 53
+
+	Amod := bigmod.NewModulusFromBig(new(big.Int).SetInt64(primesA))
+	Bmod := bigmod.NewModulusFromBig(new(big.Int).SetInt64(primesB))
+	prodmod := bigmod.NewModulusFromBig(new(big.Int).SetInt64(primesB*primesA))
+
+        var rA, rB uint32
+        switch _W {
+        case 32:
+                rA = uint32(convert32(x.mod(Amod).Bytes()))
+                rB = uint32(convert32(x.mod(Bmod).Bytes()))
+        case 64:
+                r := convert64(x.mod((primesA * primesB) & _M).Bytes())
+                rA = uint32(r % primesA)
+                rB = uint32(r % primesB)
+        default:
+                panic("crypto/rsa: invalid word size")
+        }
+
+        if rA%3 == 0 || rA%5 == 0 || rA%7 == 0 || rA%11 == 0 || rA%13 == 0 || rA%17 == 0 || rA%19 == 0 || rA%23 == 0 || rA%37 == 0 ||
+                rB%29 == 0 || rB%31 == 0 || rB%41 == 0 || rB%43 == 0 || rB%47 == 0 || rB%53 == 0 {
+                return false
+        }
+
+        return x.rsa_probablyPrimeMillerRabin(n+1, true) && x.rsa_probablyPrimeLucas()
+}
+
+// Jacobi returns the Jacobi symbol (x/y), either +1, -1, or 0.
+// The y argument must be an odd integer.
+func Jacobi(x, y *bigmod.Nat) int {
+        if y.Length() == 0 || y.getWord(0)&1 == 0 {
+                panic(fmt.Sprintf("big: invalid 2nd argument to Int.Jacobi: need odd integer but got %s", y.String()))
+        }
+
+        // We use the formulation described in chapter 2, section 2.4,
+        // "The Yacas Book of Algorithms":
+        // http://yacas.sourceforge.net/Algo.book.pdf
+
+        var a, b, c *bigmod.Nat
+	a:=bigmod.NewNat().set(x)
+	b:=bigmod.NewNat().set(y)
+        j := 1
+
+        for {
+                if b.cmp(intOne) == 0 {
+                        return j
+                }
+                if a.Length() == 0 {
+                        return 0
+                }
+		a:=divNat(a, b, nil)
+                if a.Length() == 0 {
+                        return 0
+                }
+                // a > 0
+
+                // handle factors of 2 in 'a'
+                s := a.trailingZeroBits()
+                if s&1 != 0 {
+                        bmod8 := b.getWord(0) & 7
+                        if bmod8 == 3 || bmod8 == 5 {
+                                j = -j
+                        }
+                }
+		c:=shr(c, a, s) // a = 2^s*c
+
+                // swap numerator and denominator
+                if b.abs[0]&3 == 3 && c.abs[0]&3 == 3 {
+                        j = -j
+                }
+                a.set(&b)
+                b.set(&c)
+        }
+}
+
+func (z *bigmod.Nat) singleWordNat(x uint) *bigmod.Nat {
+        if x == 0 {
+                return z.reset(0)
+        }
+	if z.Length() > 0 {
+        	z.Limbs[0] = x
+	}
+	if z.Length() > 1 {
+		for i:=1; i<z.Length(); i++ {
+			z.Limbs[i]=0
+		}
+	}
+        return z
+}
+ 
+func (z *bigmod.Nat) setUint64(x uint64) *bigmod.Nat {
+        // single-word value
+        if w := uint(x); uint64(w) == x {
+                return z.singleWordNat(w)
+        }
+        // 2-word value
+        z.reset(2)
+        z.Limbs[1] = uint(x >> 32)
+        z.Limbs[0] = uint(x)
+        return z
+}
+
+// sqrt sets z = ⌊√x⌋
+func (z *bigmod.Nat) sqrt(x *bigmod.Nat) *bigmod.Nat {
+        if x.cmp(natOne) <= 0 {
+                return z.set(x)
+        }
+        if alias(z, x) {
+                z = nil
+        }
+                
+        // Start with value known to be too large and repeat "z = ⌊(z + ⌊x/z⌋)/2⌋" until it stops getting smaller.
+        // See Brent and Zimmermann, Modern Computer Arithmetic, Algorithm 1.13 (SqrtInt).
+        // https://members.loria.fr/PZimmermann/mca/pub226.html
+        // If x is one less than a perfect square, the sequence oscillates between the correct z and z+1;
+        // otherwise it converges to the correct z and stays there.
+        var z1, z2 *bigmod.Nat
+        z1.set(z)
+        z1 = z1.setUint64(1)
+        z1 = z1.shl(z1, uint(x.bitLen()+1)/2) // must be ≥ √x
+        for n := 0; ; n++ {
+                _ = divNat(nil, x, z1, z2)
+                z2 = z2.add(z2, z1)
+                z2 = shr(z2, z2, 1)
+                if z2.cmp(z1) >= 0 {
+                        // z1 is answer.
+                        // Figure out whether z1 or z2 is currently aliased to z by looking at loop count.
+                        if n&1 == 0 {
+                                return z1
+                        }
+                       return z.set(z1)
+                }
+		tmp := bigmod.NewNat().set(z1)
+		z1.set(z2)
+		z2.set(tmp)
+        }
+}
+
+
+// probablyPrimeLucas reports whether n passes the "almost extra strong" Lucas probable prime test,
+// using Baillie-OEIS parameter selection. This corresponds to "AESLPSP" on Jacobsen's tables (link below).
+// The combination of this test and a Miller-Rabin/Fermat test with base 2 gives a Baillie-PSW test.
+//
+// References:
+//
+// Baillie and Wagstaff, "Lucas Pseudoprimes", Mathematics of Computation 35(152),
+// October 1980, pp. 1391-1417, especially page 1401.
+// https://www.ams.org/journals/mcom/1980-35-152/S0025-5718-1980-0583518-6/S0025-5718-1980-0583518-6.pdf
+//
+// Grantham, "Frobenius Pseudoprimes", Mathematics of Computation 70(234),
+// March 2000, pp. 873-891.
+// https://www.ams.org/journals/mcom/2001-70-234/S0025-5718-00-01197-2/S0025-5718-00-01197-2.pdf
+//
+// Baillie, "Extra strong Lucas pseudoprimes", OEIS A217719, https://oeis.org/A217719.
+//
+// Jacobsen, "Pseudoprime Statistics, Tables, and Data", http://ntheory.org/pseudoprimes.html.
+//
+// Nicely, "The Baillie-PSW Primality Test", https://web.archive.org/web/20191121062007/http://www.trnicely.net/misc/bpsw.html.
+// (Note that Nicely's definition of the "extra strong" test gives the wrong Jacobi condition,
+// as pointed out by Jacobsen.)
+//
+// Crandall and Pomerance, Prime Numbers: A Computational Perspective, 2nd ed.
+// Springer, 2005.
+func (n *bigmod.Nat) probablyPrimeLucas() bool {
+        // Discard 0, 1.
+        if n.Length() == 0 || n.cmp(natOne) == 0 {
+                return false
+        }
+        // Two is the only even prime.
+        // Already checked by caller, but here to allow testing in isolation.
+        if n.getWord(0)&1 == 0 {
+                return n.cmp(natTwo) == 0
+        }
+
+        // Baillie-OEIS "method C" for choosing D, P, Q,
+        // as in https://oeis.org/A217719/a217719.txt:
+        // try increasing P ≥ 3 such that D = P² - 4 (so Q = 1)
+        // until Jacobi(D, n) = -1.
+        // The search is expected to succeed for non-square n after just a few trials.
+        // After more than expected failures, check whether n is square
+        // (which would cause Jacobi(D, n) = 1 for all D not dividing n).
+        p := uint(3)
+        intD := bigmod.NewNat().set(natOne)
+        t1 := bigmod.NewNat() // temp
+	intN := bigmod.NewNat().set(n)
+	nmod := bigmod.NewModulus(n.Bytes())
+
+
+        for ; ; p++ {
+                if p > 10000 {
+                        // This is widely believed to be impossible.
+                        // If we get a report, we'll want the exact number n.
+                        panic("math/big: internal error: cannot find (D/n) = -1 for " + intN.String())
+                                 
+			                }
+                intD.setWord(0, p*p - 4)
+                j := Jacobi(intD, intN)
+                if j == -1 {
+                        break
+                }
+                if j == 0 {
+                        // d = p²-4 = (p-2)(p+2).
+                        // If (d/n) == 0 then d shares a prime factor with n.
+                        // Since the loop proceeds in increasing p and starts with p-2==1,
+                        // the shared prime factor must be p+2.
+                        // If p+2 == n, then n is prime; otherwise p+2 is a proper factor of n.
+                        return len(n) == 1 && n[0] == p+2
+                }
+                if p == 40 {
+                        // We'll never find (d/n) = -1 if n is a square.
+                        // If n is a non-square we expect to find a d in just a few attempts on average.
+                        // After 40 attempts, take a moment to check if n is indeed a square.
+                        t1 = t1.sqrt(n)
+                        t1 = basicMul(t1,t1,n.bitLen())
+                        if t1.cmp(n) == 0 {
+                                return false
+                        }
+                }
+	}
+		 // Grantham definition of "extra strong Lucas pseudoprime", after Thm 2.3 on p. 876
+        // (D, P, Q above have become Δ, b, 1):
+        //
+        // Let U_n = U_n(b, 1), V_n = V_n(b, 1), and Δ = b²-4.
+        // An extra strong Lucas pseudoprime to base b is a composite n = 2^r s + Jacobi(Δ, n),
+        // where s is odd and gcd(n, 2*Δ) = 1, such that either (i) U_s ≡ 0 mod n and V_s ≡ ±2 mod n,
+        // or (ii) V_{2^t s} ≡ 0 mod n for some 0 ≤ t < r-1.
+        //
+        // We know gcd(n, Δ) = 1 or else we'd have found Jacobi(d, n) == 0 above.
+        // We know gcd(n, 2) = 1 because n is odd.
+        //
+        // Arrange s = (n - Jacobi(Δ, n)) / 2^r = (n+1) / 2^r.
+        s := bigmod.NewNat().add(n, natOne)
+        r := int(s.trailingZeroBits())
+        s = shr(s, s, uint(r))
+        nm2 := bigmod.NewNat().sub(n, natTwo) // n-2
+
+	  // We apply the "almost extra strong" test, which checks the above conditions
+        // except for U_s ≡ 0 mod n, which allows us to avoid computing any U_k values.
+        // Jacobsen points out that maybe we should just do the full extra strong test:
+        // "It is also possible to recover U_n using Crandall and Pomerance equation 3.13:
+        // U_n = D^-1 (2V_{n+1} - PV_n) allowing us to run the full extra-strong test
+        // at the cost of a single modular inversion. This computation is easy and fast in GMP,
+        // so we can get the full extra-strong test at essentially the same performance as the
+        // almost extra strong test."
+
+        // Compute Lucas sequence V_s(b, 1), where:
+        //
+        //      V(0) = 2
+        //      V(1) = P
+        //      V(k) = P V(k-1) - Q V(k-2).
+        //
+        // (Remember that due to method C above, P = b, Q = 1.)
+        //
+        // In general V(k) = α^k + β^k, where α and β are roots of x² - Px + Q.
+        // Crandall and Pomerance (p.147) observe that for 0 ≤ j ≤ k,
+        //
+        //      V(j+k) = V(j)V(k) - V(k-j).
+        //
+        // We can therefore start with k=0 and build up to k=s in log₂(s) steps.
+        natP := bigmod.NewNat().singleWordNat(p)
+        vk := bigmod.NewNat().singleWordNat(2)
+        vk1 := bigmod.NewNat().singleWordNat(p)
+        t2 := bigmod.NewNat() // temp
+        for i := int(s.bitLen()); i >= 0; i-- {
+                if s.bit(uint(i)) != 0 {
+                        // k' = 2k+1
+                        // V(k') = V(2k+1) = V(k) V(k+1) - P.
+                        t1 = t1.Mul(vk, vk1, nmod)
+                        t1 = t1.add(t1, n)
+                        t1 = t1.sub(t1, natP)
+                        vk = divNat(t1, n, t2)
+                        // V(k'+1) = V(2k+2) = V(k+1)² - 2.
+                        t1 = t1.Mul(vk1, vk1, nmod)
+                        t1 = t1.add(t1, nm2)
+                        vk1 = divNat( t1, n, t2)
+                } else {
+                        // k' = 2k
+                        // V(k'+1) = V(2k+1) = V(k) V(k+1) - P.
+                        t1 = t1.Mul(vk, vk1, nmod)
+                        t1 = t1.add(t1, n)
+                        t1 = t1.sub(t1, natP)
+                        vk1 =divNat(t1, n, t2)
+                        // V(k') = V(2k) = V(k)² - 2
+                        t1 = t1.Mul(vk, vk, nmod)
+                        t1 = t1.add(t1, nm2)
+                        vk = divNat(t1, n, t2)
+                }
+        }
+     // Now k=s, so vk = V(s). Check V(s) ≡ ±2 (mod n).
+        if vk.cmp(natTwo) == 0 || vk.cmp(nm2) == 0 {
+                // Check U(s) ≡ 0.
+                // As suggested by Jacobsen, apply Crandall and Pomerance equation 3.13:
+                //
+                //      U(k) = D⁻¹ (2 V(k+1) - P V(k))
+                //
+                // Since we are checking for U(k) == 0 it suffices to check 2 V(k+1) == P V(k) mod n,
+                // or P V(k) - 2 V(k+1) == 0 mod n.
+                t1 := t1.mul(vk, natP, nmod)
+                t2 := t2.shl(vk1, 1)
+                if t1.cmp(t2) < 0 {
+			tmp:=bigmod.NewNat().set(t1)
+			t1.set(t2)
+			t2.set(tmp)
+                }
+                t1 = t1.sub(t1, t2)
+                t3.set(vk1) // steal vk1, no longer needed below
+                vk1 = nil
+                _ = vk1
+                t3 = t2.div(t1, n, t2)
+                if t3.Length() == 0 {
+                        return true
+                }
+        }
+
+                                   // Check V(2^t s) ≡ 0 mod n for some 0 ≤ t < r-1.
+        for t := 0; t < r-1; t++ {
+                if vk.Length() == 0 { // vk == 0
+                        return true
+                }
+                // Optimization: V(k) = 2 is a fixed point for V(k') = V(k)² - 2,
+                // so if V(k) = 2, we can stop: we will never find a future V(k) == 0.
+                if vk.Length() == 1 && vk.getWord(0) == 2 { // vk == 2
+                        return false
+                }
+                // k' = 2k
+                // V(k') = V(2k) = V(k)² - 2
+                t1 = t1.Mul(vk, vk, nmod)
+                t1 = t1.sub(t1, natTwo)
+                vk = t2.div(t1, n, t2)
+        }
+        return false
+}
+                                
+
+
+
+func (priv *PrivateKey) rsa_fips186_5_generate_prime_factors(bits int) error {
+
+	// ---------------------
+	rounds := rsa_fips186_5_aux_prime_MR_rounds(bits)
+	bytes := ((bits >> 1) + 7) >> 3
+
+	E := new(big.Int).SetInt64(int64(priv.E))
+	ENat := bigmod.NewNat().SetBig(E)
+	Nlen := bigmod.NewNat().SetBig(big.NewInt(3))
+	Nlen.expand(bits)
+	Nmod := bigmod.NewModulusFromBig(Nlen)
+	bigOneNat, err := bigmod.NewNat().SetBytes(bigOne.Bytes(), Nmod)
+
+
+	// 1/sqrt(2) * 2^256
+	base, ok := new(big.Int).SetString("0xB504F333F9DE6484597D89B3754ABE9F1D6F60BA893BA84CED17AC8583339916", 0)
+	if !ok {
+		panic("crypto/rsa: 355 Overflow of static constant sqrt2inv")
+	}
+	if (bits >> 1) < 257 {
+		panic("crypto/rsa: Number of bits too small")
+	}
+	sqrtinv := new(big.Int).Lsh(base, (uint)((bits>>1)-257))
+
+	i := 0
+	pbuf := make([]byte, bytes)
+	var p, q *big.Int
+	sqrtinvNat := bigmod.NewNat().SetBig(sqrtinv)
+	for {
+		// Generate p
+		if _, err := rand.Read(pbuf); err != nil {
+			panic("crypto/rsa: RNG failure")
+		}
+		pbuf[bytes-1] |= 1
+		////////////////////
+			pbuf[0]|=0xe0
+			pbuf[1]|=0xa0
+		//fmt.Printf("pbuf %x..%x\n", pbuf[0], pbuf[bytes-1])
+		//	bign := new(big.Int).SetBytes(pbuf)
+		//p = new(big.Int).SetBytes(pbuf)
+		p = bigmod.NewNat().SetBytes(pbuf, Nmod)
+		//fmt.Printf("p set successfully\n")
+		//p := NewNat().SetBig(bign)
+
+		// check if p < 1/sqrt(2)*(2^(bits/2)-1)
+		for Cmp(p, sqrtinvNat) < 0 {
+			if _, err := rand.Read(pbuf); err != nil {
+				fmt.Printf("rng failure\n")
+				panic("RNG failure")
+			}
+			pbuf[bytes-1] |= 1
+			////////////////////
+			pbuf[0]|=0xe0
+			pbuf[1]|=0xa0
+
+		//	fmt.Printf("pbuf %x..%x\n", pbuf[0], pbuf[bytes-1])
+			//		bign = new(big.Int).SetBytes(pbuf)
+			//p = new(big.Int).SetBytes(pbuf)
+			p = bigmod.NewNat().SetBytes(pbuf, Nmod)
+			//		p = NewNat().SetBig(bign)
+		}
+		diff := p.Sub(bigOneNat)
+
+		//ret := rsa_Coprime(diff,bigmod.NewNat().SetBig(E, Nmod),Nmod)
+		//ret := new(big.Int).GCD(nil, nil, diff, E)
+		//fmt.Printf("diff, ret computed\n")
+		/*
+				ans := ret.Bytes()
+				for m:=0;m<len(ans);m++ {
+					fmt.Printf("%x",ans[m])
+				}
+					fmt.Printf("\n")
+		                fmt.Printf("bigone\n")
+		                ans1 := bigOne.Bytes()
+		                for m:=0;m<len(ans1);m++ {
+		                        fmt.Printf("%x",ans1[m])
+		                }
+		                        fmt.Printf(" comparison %d\n",ret.Cmp(bigOne))
+		*/
+		if rsa_coprime(diff,ENat,Nmod) {
+		//if ret.Cmp(bigOne) == 0 {
+			ret := p.rsa_probablyPrime(rounds)
+		//	fmt.Printf("check for probably prime returned %t", ret)
+			if ret == true {
+		//		fmt.Printf("p is probably prime\n")
+				goto genq
+			}
+		}
+		i++
+		if i >= 5*bits {
+			priv.Primes[0] = nil
+			priv.Primes[1] = nil
+			fmt.Printf("number of tries exceeded to find p\n")
+			return errors.New("crypto/rsa: number of tries to find prime factor exceeded limit")
+		}
+	}
+genq:
+	// Generate q
+	fmt.Printf("p generated successfully\n")
+	i = 0
+	for {
+		if _, err := rand.Read(pbuf); err != nil {
+			panic("RNG failure")
+		}
+		pbuf[bytes-1] |= 1
+		////////////////////
+                        pbuf[0]|=0xe0
+                        pbuf[1]|=0x80
+
+		//fmt.Printf("pbuf %x..%x\n", pbuf[0], pbuf[bytes-1])
+		//bign := new(big.Int).SetBytes(pbuf)
+	        q = bigmod.NewNat().SetBytes(pbuf, Nmod)
+
+
+		// check if q < 1/sqrt(2)*(2^(bits/2)-1)
+		for Cmp(q, sqrtinvNat) < 0 || diffcheck(p, q, bits) {
+			if _, err := rand.Read(pbuf); err != nil {
+				panic("RNG failure")
+			}
+			pbuf[bytes-1] |= 1
+			////////////////////
+                        pbuf[0]|=0xe0
+                        pbuf[1]|=0x80
+
+		//fmt.Printf("pbuf %x..%x\n", pbuf[0], pbuf[bytes-1])
+			//		bign = new(big.Int).SetBytes(pbuf)
+	        q = bigmod.NewNat().SetBytes(pbuf, Nmod)
+			//		q = NewNat().SetBig(bign)
+		}
+                diff := q.Sub(bigOneNat)
+		if rsa_coprime(diff, ENat, Nmod)  {
+			ret := q.rsa_probablyPrime(rounds)
+		//	fmt.Printf("check for probably prime returned %t", ret)
+			if ret == true {
+			fmt.Printf("q is probably prime\n")
+				break
+			}
+		}
+		i++
+		if i >= 10*bits {
+			priv.Primes[0] = nil
+			priv.Primes[1] = nil
+			fmt.Printf("number of tries exceeded to find q\n")
+			return errors.New("crypto/rsa: number of tries to find prime factor exceeded limit")
+		}
+	}
+	priv.Primes[0] = new(big.Int).SetBig(p.Bytes())
+	priv.Primes[1] = new(big.Int).SetBig(q.Bytes())
+	return nil
 }
 
 // GenerateMultiPrimeKey generates a multi-prime RSA keypair of the given bit

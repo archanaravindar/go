@@ -12,42 +12,42 @@ import (
 )
 
 const (
-	// _W is the size in bits of our limbs.
+	// _W is the size in bits of our Limbs.
 	_W = bits.UintSize
-	// _S is the size in bytes of our limbs.
+	// _S is the size in bytes of our Limbs.
 	_S = _W / 8
 )
 
-// choice represents a constant-time boolean. The value of choice is always
+// Choice represents a constant-time boolean. The value of Choice is always
 // either 1 or 0. We use an int instead of bool in order to make decisions in
 // constant time by turning it into a mask.
-type choice uint
+type Choice uint
 
-func not(c choice) choice { return 1 ^ c }
+func not(c Choice) Choice { return 1 ^ c }
 
-const yes = choice(1)
-const no = choice(0)
+const yes = Choice(1)
+const no = Choice(0)
 
 // ctMask is all 1s if on is yes, and all 0s otherwise.
-func ctMask(on choice) uint { return -uint(on) }
+func ctMask(on Choice) uint { return -uint(on) }
 
 // ctEq returns 1 if x == y, and 0 otherwise. The execution time of this
 // function does not depend on its inputs.
-func ctEq(x, y uint) choice {
+func ctEq(x, y uint) Choice {
 	// If x != y, then either x - y or y - x will generate a carry.
 	_, c1 := bits.Sub(x, y, 0)
 	_, c2 := bits.Sub(y, x, 0)
-	return not(choice(c1 | c2))
+	return not(Choice(c1 | c2))
 }
 
 // Nat represents an arbitrary natural number
 //
-// Each Nat has an announced length, which is the number of limbs it has stored.
+// Each Nat has an announced length, which is the number of Limbs it has stored.
 // Operations on this number are allowed to leak this length, but will not leak
-// any information about the values contained in those limbs.
+// any information about the values contained in those Limbs.
 type Nat struct {
-	// limbs is little-endian in base 2^W with W = bits.UintSize.
-	limbs []uint
+	// Limbs is little-endian in base 2^W with W = bits.UintSize.
+	Limbs []uint
 }
 
 // preallocTarget is the size in bits of the numbers used to implement the most
@@ -60,54 +60,63 @@ const preallocLimbs = (preallocTarget + _W - 1) / _W
 // the preallocated capacity to hold a number of up to preallocTarget bits.
 // NewNat inlines, so the allocation can live on the stack.
 func NewNat() *Nat {
-	limbs := make([]uint, 0, preallocLimbs)
-	return &Nat{limbs}
+	Limbs := make([]uint, 0, preallocLimbs)
+	return &Nat{Limbs}
 }
 
-// expand expands x to n limbs, leaving its value unchanged.
+// expand expands x to n Limbs, leaving its value unchanged.
 func (x *Nat) expand(n int) *Nat {
-	if len(x.limbs) > n {
+	if len(x.Limbs) > n {
 		panic("bigmod: internal error: shrinking nat")
 	}
-	if cap(x.limbs) < n {
+	if cap(x.Limbs) < n {
 		newLimbs := make([]uint, n)
-		copy(newLimbs, x.limbs)
-		x.limbs = newLimbs
+		copy(newLimbs, x.Limbs)
+		x.Limbs = newLimbs
 		return x
 	}
-	extraLimbs := x.limbs[len(x.limbs):n]
+	extraLimbs := x.Limbs[len(x.Limbs):n]
 	clear(extraLimbs)
-	x.limbs = x.limbs[:n]
+	x.Limbs = x.Limbs[:n]
 	return x
 }
 
-// reset returns a zero nat of n limbs, reusing x's storage if n <= cap(x.limbs).
+func (x *Nat) clearWords(i, j uint) error{
+	if i > j {
+		return errors.New("invalid index in clearWords")
+	}
+	for k:=i; k<j; k++ {
+		x.Limbs[k]=0
+	}
+	return nil
+}
+// reset returns a zero nat of n Limbs, reusing x's storage if n <= cap(x.Limbs).
 func (x *Nat) reset(n int) *Nat {
-	if cap(x.limbs) < n {
-		x.limbs = make([]uint, n)
+	if cap(x.Limbs) < n {
+		x.Limbs = make([]uint, n)
 		return x
 	}
-	clear(x.limbs)
-	x.limbs = x.limbs[:n]
+	clear(x.Limbs)
+	x.Limbs = x.Limbs[:n]
 	return x
 }
 
 // set assigns x = y, optionally resizing x to the appropriate size.
-func (x *Nat) set(y *Nat) *Nat {
-	x.reset(len(y.limbs))
-	copy(x.limbs, y.limbs)
+func (x *Nat) Set(y *Nat) *Nat {
+	x.reset(len(y.Limbs))
+	copy(x.Limbs, y.Limbs)
 	return x
 }
 
-// setBig assigns x = n, optionally resizing n to the appropriate size.
+// SetBig assigns x = n, optionally resizing n to the appropriate size.
 //
 // The announced length of x is set based on the actual bit size of the input,
 // ignoring leading zeroes.
-func (x *Nat) setBig(n *big.Int) *Nat {
-	limbs := n.Bits()
-	x.reset(len(limbs))
-	for i := range limbs {
-		x.limbs[i] = uint(limbs[i])
+func (x *Nat) SetBig(n *big.Int) *Nat {
+	Limbs := n.Bits()
+	x.reset(len(Limbs))
+	for i := range Limbs {
+		x.Limbs[i] = uint(Limbs[i])
 	}
 	return x
 }
@@ -119,7 +128,7 @@ func (x *Nat) setBig(n *big.Int) *Nat {
 func (x *Nat) Bytes(m *Modulus) []byte {
 	i := m.Size()
 	bytes := make([]byte, i)
-	for _, limb := range x.limbs {
+	for _, limb := range x.Limbs {
 		for j := 0; j < _S; j++ {
 			i--
 			if i < 0 {
@@ -135,11 +144,32 @@ func (x *Nat) Bytes(m *Modulus) []byte {
 	return bytes
 }
 
+// resetToBytes assigns x = b, where b is a slice of big-endian bytes, resizing
+// n to the appropriate size.
+//
+// The announced length of x is set based on the actual bit size of the input,
+// ignoring leading zeroes.
+func (x *Nat) resetToBytes(b []byte, m *Modulus) *Nat {
+	x.reset((len(b) + _S - 1) / _S)
+	if err := x.setBytes(b,m); err != nil {
+		panic("bigmod: internal error: bad arithmetic")
+	}
+	// Trim most significant (trailing in little-endian) zero Limbs.
+	// We assume comparison with zero (but not the branch) is constant time.
+	for i := len(x.Limbs) - 1; i >= 0; i-- {
+		if x.Limbs[i] != 0 {
+			break
+		}
+		x.Limbs = x.Limbs[:i]
+	}
+	return x
+}
 // SetBytes assigns x = b, where b is a slice of big-endian bytes.
 // SetBytes returns an error if b >= m.
 //
 // The output will be resized to the size of m and overwritten.
 func (x *Nat) SetBytes(b []byte, m *Modulus) (*Nat, error) {
+	x.resetFor(m)
 	if err := x.setBytes(b, m); err != nil {
 		return nil, err
 	}
@@ -155,10 +185,11 @@ func (x *Nat) SetBytes(b []byte, m *Modulus) (*Nat, error) {
 //
 // The output will be resized to the size of m and overwritten.
 func (x *Nat) SetOverflowingBytes(b []byte, m *Modulus) (*Nat, error) {
+	x.resetFor(m)
 	if err := x.setBytes(b, m); err != nil {
 		return nil, err
 	}
-	leading := _W - bitLen(x.limbs[len(x.limbs)-1])
+	leading := _W - bitLen(x.Limbs[len(x.Limbs)-1])
 	if leading < m.leading {
 		return nil, errors.New("input overflows the modulus size")
 	}
@@ -178,13 +209,13 @@ func bigEndianUint(buf []byte) uint {
 func (x *Nat) setBytes(b []byte, m *Modulus) error {
 	x.resetFor(m)
 	i, k := len(b), 0
-	for k < len(x.limbs) && i >= _S {
-		x.limbs[k] = bigEndianUint(b[i-_S : i])
+	for k < len(x.Limbs) && i >= _S {
+		x.Limbs[k] = bigEndianUint(b[i-_S : i])
 		i -= _S
 		k++
 	}
-	for s := 0; s < _W && k < len(x.limbs) && i > 0; s += 8 {
-		x.limbs[k] |= uint(b[i-1]) << s
+	for s := 0; s < _W && k < len(x.Limbs) && i > 0; s += 8 {
+		x.Limbs[k] |= uint(b[i-1]) << s
 		i--
 	}
 	if i > 0 {
@@ -196,11 +227,11 @@ func (x *Nat) setBytes(b []byte, m *Modulus) error {
 // Equal returns 1 if x == y, and 0 otherwise.
 //
 // Both operands must have the same announced length.
-func (x *Nat) Equal(y *Nat) choice {
+func (x *Nat) Equal(y *Nat) Choice {
 	// Eliminate bounds checks in the loop.
-	size := len(x.limbs)
-	xLimbs := x.limbs[:size]
-	yLimbs := y.limbs[:size]
+	size := len(x.Limbs)
+	xLimbs := x.Limbs[:size]
+	yLimbs := y.Limbs[:size]
 
 	equal := yes
 	for i := 0; i < size; i++ {
@@ -210,10 +241,10 @@ func (x *Nat) Equal(y *Nat) choice {
 }
 
 // IsZero returns 1 if x == 0, and 0 otherwise.
-func (x *Nat) IsZero() choice {
+func (x *Nat) IsZero() Choice {
 	// Eliminate bounds checks in the loop.
-	size := len(x.limbs)
-	xLimbs := x.limbs[:size]
+	size := len(x.Limbs)
+	xLimbs := x.Limbs[:size]
 
 	zero := yes
 	for i := 0; i < size; i++ {
@@ -225,11 +256,11 @@ func (x *Nat) IsZero() choice {
 // cmpGeq returns 1 if x >= y, and 0 otherwise.
 //
 // Both operands must have the same announced length.
-func (x *Nat) cmpGeq(y *Nat) choice {
+func (x *Nat) cmpGeq(y *Nat) Choice {
 	// Eliminate bounds checks in the loop.
-	size := len(x.limbs)
-	xLimbs := x.limbs[:size]
-	yLimbs := y.limbs[:size]
+	size := len(x.Limbs)
+	xLimbs := x.Limbs[:size]
+	yLimbs := y.Limbs[:size]
 
 	var c uint
 	for i := 0; i < size; i++ {
@@ -237,17 +268,17 @@ func (x *Nat) cmpGeq(y *Nat) choice {
 	}
 	// If there was a carry, then subtracting y underflowed, so
 	// x is not greater than or equal to y.
-	return not(choice(c))
+	return not(Choice(c))
 }
 
 // assign sets x <- y if on == 1, and does nothing otherwise.
 //
 // Both operands must have the same announced length.
-func (x *Nat) assign(on choice, y *Nat) *Nat {
+func (x *Nat) assign(on Choice, y *Nat) *Nat {
 	// Eliminate bounds checks in the loop.
-	size := len(x.limbs)
-	xLimbs := x.limbs[:size]
-	yLimbs := y.limbs[:size]
+	size := len(x.Limbs)
+	xLimbs := x.Limbs[:size]
+	yLimbs := y.Limbs[:size]
 
 	mask := ctMask(on)
 	for i := 0; i < size; i++ {
@@ -261,9 +292,9 @@ func (x *Nat) assign(on choice, y *Nat) *Nat {
 // Both operands must have the same announced length.
 func (x *Nat) add(y *Nat) (c uint) {
 	// Eliminate bounds checks in the loop.
-	size := len(x.limbs)
-	xLimbs := x.limbs[:size]
-	yLimbs := y.limbs[:size]
+	size := len(x.Limbs)
+	xLimbs := x.Limbs[:size]
+	yLimbs := y.Limbs[:size]
 
 	for i := 0; i < size; i++ {
 		xLimbs[i], c = bits.Add(xLimbs[i], yLimbs[i], c)
@@ -274,16 +305,54 @@ func (x *Nat) add(y *Nat) (c uint) {
 // sub computes x -= y. It returns the borrow of the subtraction.
 //
 // Both operands must have the same announced length.
-func (x *Nat) sub(y *Nat) (c uint) {
+func (x *Nat) Sub(y *Nat) (c uint) {
 	// Eliminate bounds checks in the loop.
-	size := len(x.limbs)
-	xLimbs := x.limbs[:size]
-	yLimbs := y.limbs[:size]
+	size := len(x.Limbs)
+	xLimbs := x.Limbs[:size]
+	yLimbs := y.Limbs[:size]
 
 	for i := 0; i < size; i++ {
 		xLimbs[i], c = bits.Sub(xLimbs[i], yLimbs[i], c)
 	}
 	return
+}
+
+// trailingZeroBits returns the number of consecutive least significant zero
+// bits of x.
+func (x *Nat) trailingZeroBits() uint {
+        if x.Length() == 0 {
+                return 0
+        }
+        var i uint
+        for x.Limbs[i] == 0 {
+                i++
+        }
+        // x[Limbs] != 0
+        return i*_W + uint(bits.TrailingZeros(uint(x.Limbs[i])))
+}
+
+
+// Mul calculates z = x * y.
+//
+// All inputs should be the same length and already reduced modulo m.
+// z will be resized to the size of m and overwritten.
+func (z *Nat) Mul(x *Nat, y *Nat, m *Modulus) *Nat {
+	n := len(m.nat.Limbs)
+	zLimbs := z.resetFor(m).Limbs
+	xLimbs := x.Limbs
+	yLimbs := y.Limbs
+	switch n {
+	default:
+		for i := 0; i < n; i++ {
+			addMulVVW(zLimbs[i:], xLimbs, yLimbs[i])
+		}
+	case 2048 / _W:
+		const n = 2048 / _W // compiler hint
+		for i := 0; i < n; i++ {
+			addMulVVW2048(&zLimbs[i:][0], &xLimbs[0], yLimbs[i])
+		}
+	}
+	return z
 }
 
 // Modulus is used for modular arithmetic, precomputing relevant constants.
@@ -299,20 +368,20 @@ type Modulus struct {
 	// other natural number being used.
 	nat     *Nat
 	leading int  // number of leading zeros in the modulus
-	m0inv   uint // -nat.limbs[0]⁻¹ mod _W
+	m0inv   uint // -nat.Limbs[0]⁻¹ mod _W
 	rr      *Nat // R*R for montgomeryRepresentation
 }
 
-// rr returns R*R with R = 2^(_W * n) and n = len(m.nat.limbs).
+// rr returns R*R with R = 2^(_W * n) and n = len(m.nat.Limbs).
 func rr(m *Modulus) *Nat {
 	rr := NewNat().ExpandFor(m)
-	n := uint(len(rr.limbs))
+	n := uint(len(rr.Limbs))
 	mLen := uint(m.BitLen())
 	logR := _W * n
 
 	// We start by computing R = 2^(_W * n) mod m. We can get pretty close, to
 	// 2^⌊log₂m⌋, by setting the highest bit we can without having to reduce.
-	rr.limbs[n-1] = 1 << ((mLen - 1) % _W)
+	rr.Limbs[n-1] = 1 << ((mLen - 1) % _W)
 	// Then we double until we reach 2^(_W * n).
 	for i := mLen - 1; i < logR; i++ {
 		rr.Add(rr, m)
@@ -380,11 +449,54 @@ func NewModulusFromBig(n *big.Int) (*Modulus, error) {
 		return nil, errors.New("modulus must be odd")
 	}
 	m := &Modulus{}
-	m.nat = NewNat().setBig(n)
-	m.leading = _W - bitLen(m.nat.limbs[len(m.nat.limbs)-1])
-	m.m0inv = minusInverseModW(m.nat.limbs[0])
+	m.nat = NewNat().SetBig(n)
+	m.leading = _W - bitLen(m.nat.Limbs[len(m.nat.Limbs)-1])
+	m.m0inv = minusInverseModW(m.nat.Limbs[0])
 	m.rr = rr(m)
 	return m, nil
+}
+
+func (x *Nat) Length() int {
+	return len(x.Limbs)
+}
+func (z *Nat) GetWord(i uint) (uint, error) {
+        if int(i) > len(z.Limbs) {
+                return 0, errors.New("index greater than size")
+        }
+        return z.Limbs[i], nil
+}
+
+func (z *Nat) SetWord(i, w uint) (error) {
+        if int(i) > len(z.Limbs) {
+                return errors.New("index greater than size")
+        }
+        z.Limbs[i]=w
+        return nil
+}
+func (x *Nat) slice(i, j uint) ([]uint, error) {
+        if i<=j {
+                return x.Limbs[i:j], nil
+        } else {
+                return nil, errors.New("invalid slice index")
+        }
+}       
+
+
+func (x *Nat) maxLen(y *Nat) (uint, uint) {
+	xl := len(x.Limbs)
+	yl := len(y.Limbs)
+	if xl > yl {
+		return uint(xl), uint(xl*_W)
+	} else {
+		return uint(yl), uint(yl*_W)
+	}
+}
+func(x *Nat) Or(i uint, w uint) error {
+	if int(i)>len(x.Limbs) {
+		return errors.New("index overflow error")
+	}
+	x.Limbs[i]|=w
+	return nil
 }
 
 // bitLen is a version of bits.Len that only leaks the bit length of n, but not
@@ -408,7 +520,7 @@ func (m *Modulus) Size() int {
 
 // BitLen returns the size of m in bits.
 func (m *Modulus) BitLen() int {
-	return len(m.nat.limbs)*_W - int(m.leading)
+	return len(m.nat.Limbs)*_W - int(m.leading)
 }
 
 // Nat returns m as a Nat. The return value must not be written to.
@@ -423,10 +535,10 @@ func (x *Nat) shiftIn(y uint, m *Modulus) *Nat {
 	d := NewNat().resetFor(m)
 
 	// Eliminate bounds checks in the loop.
-	size := len(m.nat.limbs)
-	xLimbs := x.limbs[:size]
-	dLimbs := d.limbs[:size]
-	mLimbs := m.nat.limbs[:size]
+	size := len(m.nat.Limbs)
+	xLimbs := x.Limbs[:size]
+	dLimbs := d.Limbs[:size]
+	mLimbs := m.nat.Limbs[:size]
 
 	// Each iteration of this loop computes x = 2x + b mod m, where b is a bit
 	// from y. Effectively, it left-shifts x and adds y one bit at a time,
@@ -448,7 +560,7 @@ func (x *Nat) shiftIn(y uint, m *Modulus) *Nat {
 		// Like in maybeSubtractModulus, we need the subtraction if either it
 		// didn't underflow (meaning 2x + b > m) or if computing 2x + b
 		// overflowed (meaning 2x + b > 2^_W*n > m).
-		needSubtraction = not(choice(borrow)) | choice(carry)
+		needSubtraction = not(Choice(borrow)) | Choice(carry)
 	}
 	return x.assign(needSubtraction, d)
 }
@@ -462,23 +574,23 @@ func (out *Nat) Mod(x *Nat, m *Modulus) *Nat {
 	out.resetFor(m)
 	// Working our way from the most significant to the least significant limb,
 	// we can insert each limb at the least significant position, shifting all
-	// previous limbs left by _W. This way each limb will get shifted by the
-	// correct number of bits. We can insert at least N - 1 limbs without
+	// previous Limbs left by _W. This way each limb will get shifted by the
+	// correct number of bits. We can insert at least N - 1 Limbs without
 	// overflowing m. After that, we need to reduce every time we shift.
-	i := len(x.limbs) - 1
-	// For the first N - 1 limbs we can skip the actual shifting and position
+	i := len(x.Limbs) - 1
+	// For the first N - 1 Limbs we can skip the actual shifting and position
 	// them at the shifted position, which starts at min(N - 2, i).
-	start := len(m.nat.limbs) - 2
+	start := len(m.nat.Limbs) - 2
 	if i < start {
 		start = i
 	}
 	for j := start; j >= 0; j-- {
-		out.limbs[j] = x.limbs[i]
+		out.Limbs[j] = x.Limbs[i]
 		i--
 	}
-	// We shift in the remaining limbs, reducing modulo m each time.
+	// We shift in the remaining Limbs, reducing modulo m each time.
 	for i >= 0 {
-		out.shiftIn(x.limbs[i], m)
+		out.shiftIn(x.Limbs[i], m)
 		i--
 	}
 	return out
@@ -488,14 +600,14 @@ func (out *Nat) Mod(x *Nat, m *Modulus) *Nat {
 //
 // The announced size of x must be smaller than or equal to that of m.
 func (x *Nat) ExpandFor(m *Modulus) *Nat {
-	return x.expand(len(m.nat.limbs))
+	return x.expand(len(m.nat.Limbs))
 }
 
 // resetFor ensures out has the right size to work with operations modulo m.
 //
 // out is zeroed and may start at any size.
 func (out *Nat) resetFor(m *Modulus) *Nat {
-	return out.reset(len(m.nat.limbs))
+	return out.reset(len(m.nat.Limbs))
 }
 
 // maybeSubtractModulus computes x -= m if and only if x >= m or if "always" is yes.
@@ -507,12 +619,12 @@ func (out *Nat) resetFor(m *Modulus) *Nat {
 // overflowed its size, meaning abstractly x > 2^_W*n > m even if x < m.
 //
 // x and m operands must have the same announced length.
-func (x *Nat) maybeSubtractModulus(always choice, m *Modulus) {
-	t := NewNat().set(x)
-	underflow := t.sub(m.nat)
+func (x *Nat) maybeSubtractModulus(always Choice, m *Modulus) {
+	t := NewNat().Set(x)
+	underflow := t.Sub(m.nat)
 	// We keep the result if x - m didn't underflow (meaning x >= m)
 	// or if always was set.
-	keep := not(choice(underflow)) | choice(always)
+	keep := not(Choice(underflow)) | Choice(always)
 	x.assign(keep, t)
 }
 
@@ -520,12 +632,12 @@ func (x *Nat) maybeSubtractModulus(always choice, m *Modulus) {
 //
 // The length of both operands must be the same as the modulus. Both operands
 // must already be reduced modulo m.
-func (x *Nat) Sub(y *Nat, m *Modulus) *Nat {
-	underflow := x.sub(y)
+func (x *Nat) SubMod(y *Nat, m *Modulus) *Nat {
+	underflow := x.Sub(y)
 	// If the subtraction underflowed, add m.
-	t := NewNat().set(x)
+	t := NewNat().Set(x)
 	t.add(m.nat)
-	x.assign(choice(underflow), t)
+	x.assign(Choice(underflow), t)
 	return x
 }
 
@@ -535,12 +647,12 @@ func (x *Nat) Sub(y *Nat, m *Modulus) *Nat {
 // must already be reduced modulo m.
 func (x *Nat) Add(y *Nat, m *Modulus) *Nat {
 	overflow := x.add(y)
-	x.maybeSubtractModulus(choice(overflow), m)
+	x.maybeSubtractModulus(Choice(overflow), m)
 	return x
 }
 
 // montgomeryRepresentation calculates x = x * R mod m, with R = 2^(_W * n) and
-// n = len(m.nat.limbs).
+// n = len(m.nat.Limbs).
 //
 // Faster Montgomery multiplication replaces standard modular multiplication for
 // numbers in this representation.
@@ -553,7 +665,7 @@ func (x *Nat) montgomeryRepresentation(m *Modulus) *Nat {
 }
 
 // montgomeryReduction calculates x = x / R mod m, with R = 2^(_W * n) and
-// n = len(m.nat.limbs).
+// n = len(m.nat.Limbs).
 //
 // This assumes that x is already reduced mod m.
 func (x *Nat) montgomeryReduction(m *Modulus) *Nat {
@@ -561,20 +673,20 @@ func (x *Nat) montgomeryReduction(m *Modulus) *Nat {
 	// convert out back from Montgomery representation, because it works out to
 	// dividing by R.
 	one := NewNat().ExpandFor(m)
-	one.limbs[0] = 1
+	one.Limbs[0] = 1
 	return x.montgomeryMul(x, one, m)
 }
 
 // montgomeryMul calculates x = a * b / R mod m, with R = 2^(_W * n) and
-// n = len(m.nat.limbs), also known as a Montgomery multiplication.
+// n = len(m.nat.Limbs), also known as a Montgomery multiplication.
 //
 // All inputs should be the same length and already reduced modulo m.
 // x will be resized to the size of m and overwritten.
 func (x *Nat) montgomeryMul(a *Nat, b *Nat, m *Modulus) *Nat {
-	n := len(m.nat.limbs)
-	mLimbs := m.nat.limbs[:n]
-	aLimbs := a.limbs[:n]
-	bLimbs := b.limbs[:n]
+	n := len(m.nat.Limbs)
+	mLimbs := m.nat.Limbs[:n]
+	aLimbs := a.Limbs[:n]
+	bLimbs := b.Limbs[:n]
 
 	switch n {
 	default:
@@ -635,8 +747,8 @@ func (x *Nat) montgomeryMul(a *Nat, b *Nat, m *Modulus) *Nat {
 		// cost is very similar since the constant time subtraction tells us if
 		// x >= m as a side effect, and taking care of the broken invariant is
 		// highly undesirable (see https://go.dev/issue/13907).
-		copy(x.reset(n).limbs, T[n:])
-		x.maybeSubtractModulus(choice(c), m)
+		copy(x.reset(n).Limbs, T[n:])
+		x.maybeSubtractModulus(Choice(c), m)
 
 	// The following specialized cases follow the exact same algorithm, but
 	// optimized for the sizes most used in RSA. addMulVVW is implemented in
@@ -653,8 +765,8 @@ func (x *Nat) montgomeryMul(a *Nat, b *Nat, m *Modulus) *Nat {
 			c2 := addMulVVW1024(&T[i], &mLimbs[0], Y)
 			T[n+i], c = bits.Add(c1, c2, c)
 		}
-		copy(x.reset(n).limbs, T[n:])
-		x.maybeSubtractModulus(choice(c), m)
+		copy(x.reset(n).Limbs, T[n:])
+		x.maybeSubtractModulus(Choice(c), m)
 
 	case 1536 / _W:
 		const n = 1536 / _W // compiler hint
@@ -667,8 +779,8 @@ func (x *Nat) montgomeryMul(a *Nat, b *Nat, m *Modulus) *Nat {
 			c2 := addMulVVW1536(&T[i], &mLimbs[0], Y)
 			T[n+i], c = bits.Add(c1, c2, c)
 		}
-		copy(x.reset(n).limbs, T[n:])
-		x.maybeSubtractModulus(choice(c), m)
+		copy(x.reset(n).Limbs, T[n:])
+		x.maybeSubtractModulus(Choice(c), m)
 
 	case 2048 / _W:
 		const n = 2048 / _W // compiler hint
@@ -681,8 +793,8 @@ func (x *Nat) montgomeryMul(a *Nat, b *Nat, m *Modulus) *Nat {
 			c2 := addMulVVW2048(&T[i], &mLimbs[0], Y)
 			T[n+i], c = bits.Add(c1, c2, c)
 		}
-		copy(x.reset(n).limbs, T[n:])
-		x.maybeSubtractModulus(choice(c), m)
+		copy(x.reset(n).Limbs, T[n:])
+		x.maybeSubtractModulus(Choice(c), m)
 	}
 
 	return x
@@ -711,10 +823,10 @@ func addMulVVW(z, x []uint, y uint) (carry uint) {
 //
 // The length of both operands must be the same as the modulus. Both operands
 // must already be reduced modulo m.
-func (x *Nat) Mul(y *Nat, m *Modulus) *Nat {
+func (x *Nat) MulMod(y *Nat, m *Modulus) *Nat {
 	// A Montgomery multiplication by a value out of the Montgomery domain
 	// takes the result out of Montgomery representation.
-	xR := NewNat().set(x).montgomeryRepresentation(m) // xR = x * R mod m
+	xR := NewNat().Set(x).montgomeryRepresentation(m) // xR = x * R mod m
 	return x.montgomeryMul(xR, y, m)                  // x = xR * y / R mod m
 }
 
@@ -734,13 +846,13 @@ func (out *Nat) Exp(x *Nat, e []byte, m *Modulus) *Nat {
 		NewNat(), NewNat(), NewNat(), NewNat(), NewNat(),
 		NewNat(), NewNat(), NewNat(), NewNat(), NewNat(),
 	}
-	table[0].set(x).montgomeryRepresentation(m)
+	table[0].Set(x).montgomeryRepresentation(m)
 	for i := 1; i < len(table); i++ {
 		table[i].montgomeryMul(table[i-1], table[0], m)
 	}
 
 	out.resetFor(m)
-	out.limbs[0] = 1
+	out.Limbs[0] = 1
 	out.montgomeryRepresentation(m)
 	tmp := NewNat().ExpandFor(m)
 	for _, b := range e {
@@ -767,6 +879,21 @@ func (out *Nat) Exp(x *Nat, e []byte, m *Modulus) *Nat {
 	return out.montgomeryReduction(m)
 }
 
+// NewModulus creates a new Modulus from a slice of big-endian bytes.
+//
+// The value must be odd. The number of significant bits (and nothing else) is
+// leaked through timing side-channels.
+func NewModulus(b []byte) (*Modulus, error) {
+	if len(b) == 0 || b[len(b)-1]&1 != 1 {
+		return nil, errors.New("modulus must be > 0 and odd")
+	}
+	m := &Modulus{}
+	m.nat = NewNat().resetToBytes(b, m)
+	m.leading = _W - bitLen(m.nat.Limbs[len(m.nat.Limbs)-1])
+	m.m0inv = minusInverseModW(m.nat.Limbs[0])
+	m.rr = rr(m)
+	return m, nil
+}
 // ExpShortVarTime calculates out = x^e mod m.
 //
 // The output will be resized to the size of m and overwritten. x must already
@@ -775,8 +902,8 @@ func (out *Nat) ExpShortVarTime(x *Nat, e uint, m *Modulus) *Nat {
 	// For short exponents, precomputing a table and using a window like in Exp
 	// doesn't pay off. Instead, we do a simple conditional square-and-multiply
 	// chain, skipping the initial run of zeroes.
-	xR := NewNat().set(x).montgomeryRepresentation(m)
-	out.set(xR)
+	xR := NewNat().Set(x).montgomeryRepresentation(m)
+	out.Set(xR)
 	for i := bits.UintSize - bitLen(e) + 1; i < bits.UintSize; i++ {
 		out.montgomeryMul(out, out, m)
 		if k := (e >> (bits.UintSize - i - 1)) & 1; k != 0 {
