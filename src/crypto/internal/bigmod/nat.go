@@ -81,9 +81,9 @@ func (x *Nat) expand(n int) *Nat {
 	return x
 }
 
-func (x *Nat) clearWords(i, j uint) error{
+func (x *Nat) ClearWords(i, j uint) error{
 	if i > j {
-		return errors.New("invalid index in clearWords")
+		return errors.New("invalid index in ClearWords")
 	}
 	for k:=i; k<j; k++ {
 		x.Limbs[k]=0
@@ -317,9 +317,9 @@ func (x *Nat) Sub(y *Nat) (c uint) {
 	return
 }
 
-// trailingZeroBits returns the number of consecutive least significant zero
+// TrailingZeroBits returns the number of consecutive least significant zero
 // bits of x.
-func (x *Nat) trailingZeroBits() uint {
+func (x *Nat) TrailingZeroBits() uint {
         if x.Length() == 0 {
                 return 0
         }
@@ -473,13 +473,6 @@ func (z *Nat) SetWord(i, w uint) (error) {
         z.Limbs[i]=w
         return nil
 }
-func (x *Nat) slice(i, j uint) ([]uint, error) {
-        if i<=j {
-                return x.Limbs[i:j], nil
-        } else {
-                return nil, errors.New("invalid slice index")
-        }
-}       
 
 
 func (x *Nat) maxLen(y *Nat) (uint, uint) {
