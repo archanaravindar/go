@@ -39,9 +39,11 @@ import (
 	"math"
 	"math/big"
 	"math/bits"
+	"math/rand"
 )
 
-type Choice bigmod.Choice
+        const _W = bits.UintSize
+type choice bigmod.Choice
 var bigOne = big.NewInt(1)
 
 // A PublicKey represents the public part of an RSA key.
@@ -443,6 +445,8 @@ func cmpGeq(x []uint, y []uint) uint {
 //
 // This doesn't leak any information about either of them
 func ctEq(x, y uint) uint {
+   // _W is the same as the size in bits of bigmod Limbs.
+
         // If x == y, then x ^ y should be all zero bits.
         q := uint(x ^ y)
         // For any q != 0, either the MSB of q, or the MSB of -q is 1.
@@ -452,7 +456,7 @@ func ctEq(x, y uint) uint {
 }
 
 
-func  (x* bigmod.Nat) CondSwap(cond uint, y *bigmod.Nat, m *bigmod.Modulus) {
+func  CondSwap(cond uint, x *bigmod.Nat, y *bigmod.Nat, m *bigmod.Modulus) {
   for i:=0; i< len(x.Limbs) && i< len(y.Limbs) ; i++ {
       xi := x.Limbs[i]
       x.Limbs[i] = ctIfElse(cond, y.Limbs[i], xi)
@@ -481,8 +485,8 @@ func rsa_topLimbs(a, b []uint) (uint, uint) {
                 panic("topLimbs: mismatched arguments")
         }
         // We lookup pairs of elements from top to bottom, until a1 or b1 != 0
-        var a1, a0, b1, b0 Word
-        done := 0
+        var a1, a0, b1, b0 , done uint
+        done = 0
         for i := len(a) - 1; i > 0; i-- {
                 a1 = ctIfElse(done, a1, a[i])
                 a0 = ctIfElse(done, a0, a[i-1])
@@ -494,12 +498,12 @@ func rsa_topLimbs(a, b []uint) (uint, uint) {
         // bits completely.
 
         // Converting to Word avoids a panic check
-        l := uint(leadingZeros(a1 | b1))
+        l := uint(bits.LeadingZeros(a1 | b1))
         return (a1 << l) | (a0 >> (_W - l)), (b1 << l) | (b0 >> (_W - l))
 }
 
 // conditionally negate a slice of words based on two's complement
-func negateTwos(doit uint, z []uint) {
+func negateTwos(doit choice, z []uint) {
         if len(z) <= 0 {
                 return
         }
@@ -512,6 +516,18 @@ func negateTwos(doit uint, z []uint) {
         }
 }
 
+// General utilities
+
+// add calculates a + b + carry, returning the sum, and carry
+//
+// This is a convenient wrapper around bits.Add, and should be optimized
+// by the compiler to produce a single ADC instruction.
+func add(a, b, carry uint) (sum uint, newCarry uint) {
+        s, c := bits.Add(uint(a), uint(b), uint(carry))
+        return uint(s), uint(c)
+}
+
+
 // mixSigned calculates a <- alpha * a + beta * b, returning whether the result is negative.
 //
 // alpha and beta are signed integers, but whose absolute value is < 2^(_W / 2).
@@ -519,12 +535,13 @@ func negateTwos(doit uint, z []uint) {
 //
 // a and b both have an extra limb. We use the extra limb of a to store the full
 // result.
-func mixSigned(a, b []uint, alpha, beta uint) Choice {
+func mixSigned(a, b []uint, alpha, beta uint) choice {
         // Get the sign and absolute value for alpha
-        alphaNeg := alpha >> (_W - 1)
+	var alphaNeg, betaNeg uint
+        alphaNeg = alpha >> (_W - 1)
         alpha = (alpha ^ -alphaNeg) + alphaNeg
         // Get the sign and absolute value for beta
-        betaNeg := beta >> (_W - 1)
+        betaNeg = beta >> (_W - 1)
         beta = (beta ^ -betaNeg) + betaNeg
 
         // Our strategy for representing the result is to use a two's complement
@@ -537,11 +554,11 @@ func mixSigned(a, b []uint, alpha, beta uint) Choice {
         }
         a[len(a)-1] = cc
         // Correct for sign
-        negateTwos(Choice(alphaNeg), a)
+        negateTwos(choice(alphaNeg), a)
 
 	       // We want to do the same for b, and then add it to a, but without
         // creating a temporary array
-        var mulCarry, negCarry, addCarry, si Word
+        var mulCarry, negCarry, addCarry, si uint
         mulCarry, si = mulAddWWW_g(beta, b[0], 0)
         si, negCarry = add(si^-betaNeg, betaNeg, 0)
         a[0], addCarry = add(a[0], si, 0)
@@ -554,9 +571,9 @@ func mixSigned(a, b []uint, alpha, beta uint) Choice {
         a[len(a)-1], _ = add(a[len(a)-1], si, addCarry)
 
         outNeg := uint(a[len(a)-1] >> (_W - 1))
-        negateTwos(outNeg, a)
+        negateTwos(choice(outNeg), a)
 
-        return outNeg
+        return choice(outNeg)
 }
 // "Missing" Functions
 // These are routines that could in theory be implemented in assembly,
@@ -579,7 +596,7 @@ func div(hi, lo, d uint) (uint, uint) {
                 quo |= uint(sel)
                 quo <<= 1
         }
-        sel := ctEq(lo, d) | ctGt(lo, d) | Choice(hi)
+        sel := ctEq(lo, d) | ctGt(lo, d) | choice(hi)
         quo |= uint(sel)
         rem := ctIfElse(sel, lo-d, lo)
         return quo, rem
@@ -597,8 +614,8 @@ func div(hi, lo, d uint) (uint, uint) {
 // This remainder will be correct regardless of the size difference between x and d.
 func divNat(x *bigmod.Nat, d *bigmod.Nat, out *bigmod.Nat) *bigmod.Nat {
         size := d.Length()
-	r:=bigmod.NewNat().reset(d)
-	scratch:=bigmod.NewNat().reset(d)
+	r:=bigmod.NewNat().Reset(size)
+	scratch:=bigmod.NewNat().Reset(size)
 
         // We use free injection, like in Mod
         i := x.Length() - 1
@@ -615,7 +632,7 @@ func divNat(x *bigmod.Nat, d *bigmod.Nat, out *bigmod.Nat) *bigmod.Nat {
         }
 
         for ; i >= 0; i-- {
-                oi := shiftAddInGeneric(r, scratch, x.Limbs[i], d)
+                oi := shiftAddInGeneric(r.Limbs, scratch.Limbs, x.Limbs[i], d)
                 // Hopefully the branch predictor can make these checks not too expensive,
                 // otherwise we'll have to duplicate the routine
                 if out != nil {
@@ -712,7 +729,7 @@ func shiftAddInGeneric(z, scratch []uint, x uint, m *bigmod.Nat) uint {
         b0 = ctIfElse(done, b0, m.GetWord(0))
         // Now, we need to shift away the leading zeros to get the most significant bits.
         // Converting to uint avoids a panic check
-        l := uint(leadingZeros(b1))
+        l := uint(LeadingZeros(b1))
         a2 = (a2 << l) | (a1 >> (_W - l))
         a1 = (a1 << l) | (a0 >> (_W - l))
         b1 = (b1 << l) | (b0 >> (_W - l))
@@ -738,7 +755,7 @@ func same(x, y *bigmod.Nat) bool {
 // is never changed for nat values; i.e. that there are
 // no 3-operand slice expressions in this code (or worse,
 // reflect-based operations to the same effect).
-func alias(x, y nat) bool {
+func alias(x, y *bigmod.Nat) bool {
         return cap(x.Limbs) > 0 && cap(y.Limbs) > 0 && &x[0:cap(x.Limbs)][cap(x.Limbs)-1] == &y[0:cap(y.Limbs)][cap(y.Limbs)-1]
 }
 
@@ -756,7 +773,7 @@ func (z *bigmod.Nat) shl(x *bigmod.Nat, s uint) *bigmod.Nat {
 
         m := x.Length()
         if m == 0 {
-                return z.reset(0)
+                return z.Reset(0)
         }
         // m > 0
 
@@ -787,7 +804,7 @@ func shr(z *bigmod.Nat, x *bigmod.Nat, s uint) *bigmod.Nat {
         m := x.Length()
         n := m - int(s/_W)
         if n <= 0 {
-                return z.reset(0)
+                return z.Reset(0)
         }
         // n > 0
 
@@ -842,7 +859,7 @@ func (z *bigmod.Nat) random(rand *rand.Rand, limit *bigmod.Nat, n int) *bigmod.N
         if alias(z, limit) {
                 z = nil // z is an alias for limit - cannot reuse
         }
-        z = z.reset(limit.Length())
+        z = z.Reset(limit.Length())
 
         bitLengthOfMSW := uint(n % _W)
         if bitLengthOfMSW == 0 {
@@ -927,7 +944,7 @@ NextRandom:
 // cmpZero checks if a slice is equal to zero, in constant time
 //
 // LEAK: the length of a
-func cmpZero(a []uint) Choice {
+func cmpZero(a []uint) choice {
         var v uint
         for i := 0; i < len(a); i++ {
                 v |= a[i]
@@ -980,7 +997,7 @@ func (z* bigmod.Nat) maskEnd(bits int) {
 func (z *bigmod.Nat) resizeBits(newbits int) *bigmod.Nat {
 	newlimbs := limbCount(newbits)
 	z.expand(newlimbs)
-	res:=bigmod.NewNat().reset(newlimbs)
+	res:=bigmod.NewNat().Reset(newlimbs)
 	maskEnd(res, newbits)
         return z
 }
@@ -1155,7 +1172,7 @@ func (z *bigmod.Nat) invert(announced int, x *bigmod.Nat, m *bigmod.Nat, m0inv u
 
 
 // invertModW calculates x^-1 mod _W
-func invertModW(x uint) Word {
+func invertModW(x uint) uint {
         y := x
         // This is enough for 64 bits, and the extra iteration is not that costly for 32
         for i := 0; i < 5; i++ {
@@ -1165,7 +1182,7 @@ func invertModW(x uint) Word {
 }     
 
 
-func rsa_coprime(x* bigmod.Nat, y *bigmod.Nat, m *Modulus) Choice {
+func rsa_coprime(x* bigmod.Nat, y *bigmod.Nat, m *bigmod.Modulus) choice {
 	size := x.MaxLen(y)
 	if size == 0 {
                 // technically the result should be 1 since 0 is not a divisor,
@@ -1180,7 +1197,7 @@ func rsa_coprime(x* bigmod.Nat, y *bigmod.Nat, m *Modulus) Choice {
 		a.expand(size)
 	}
 	aOdd := (uint)(a.GetWord(0)&1)
-	a.CondSwap(aOdd, b, m)
+	a.CondSwap(aOdd, a, b, m)
 	scratch := bigmod.NewNat()
 	bOdd := (uint)(b.GetWord(0)&1)
 	b.OrWord(0,1)
@@ -1341,7 +1358,7 @@ func Jacobi(x, y *bigmod.Nat) int {
 
 func (z *bigmod.Nat) singleWordNat(x uint) *bigmod.Nat {
         if x == 0 {
-                return z.reset(0)
+                return z.Reset(0)
         }
 	if z.Length() > 0 {
         	z.Limbs[0] = x
@@ -1360,7 +1377,7 @@ func (z *bigmod.Nat) setUint64(x uint64) *bigmod.Nat {
                 return z.singleWordNat(w)
         }
         // 2-word value
-        z.reset(2)
+        z.Reset(2)
         z.Limbs[1] = uint(x >> 32)
         z.Limbs[0] = uint(x)
         return z

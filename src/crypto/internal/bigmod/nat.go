@@ -91,7 +91,7 @@ func (x *Nat) clearWords(i, j uint) error{
 	return nil
 }
 // reset returns a zero nat of n Limbs, reusing x's storage if n <= cap(x.Limbs).
-func (x *Nat) reset(n int) *Nat {
+func (x *Nat) Reset(n int) *Nat {
 	if cap(x.Limbs) < n {
 		x.Limbs = make([]uint, n)
 		return x
@@ -103,7 +103,7 @@ func (x *Nat) reset(n int) *Nat {
 
 // set assigns x = y, optionally resizing x to the appropriate size.
 func (x *Nat) Set(y *Nat) *Nat {
-	x.reset(len(y.Limbs))
+	x.Reset(len(y.Limbs))
 	copy(x.Limbs, y.Limbs)
 	return x
 }
@@ -114,7 +114,7 @@ func (x *Nat) Set(y *Nat) *Nat {
 // ignoring leading zeroes.
 func (x *Nat) SetBig(n *big.Int) *Nat {
 	Limbs := n.Bits()
-	x.reset(len(Limbs))
+	x.Reset(len(Limbs))
 	for i := range Limbs {
 		x.Limbs[i] = uint(Limbs[i])
 	}
@@ -150,7 +150,7 @@ func (x *Nat) Bytes(m *Modulus) []byte {
 // The announced length of x is set based on the actual bit size of the input,
 // ignoring leading zeroes.
 func (x *Nat) resetToBytes(b []byte, m *Modulus) *Nat {
-	x.reset((len(b) + _S - 1) / _S)
+	x.Reset((len(b) + _S - 1) / _S)
 	if err := x.setBytes(b,m); err != nil {
 		panic("bigmod: internal error: bad arithmetic")
 	}
@@ -607,7 +607,7 @@ func (x *Nat) ExpandFor(m *Modulus) *Nat {
 //
 // out is zeroed and may start at any size.
 func (out *Nat) resetFor(m *Modulus) *Nat {
-	return out.reset(len(m.nat.Limbs))
+	return out.Reset(len(m.nat.Limbs))
 }
 
 // maybeSubtractModulus computes x -= m if and only if x >= m or if "always" is yes.
@@ -747,7 +747,7 @@ func (x *Nat) montgomeryMul(a *Nat, b *Nat, m *Modulus) *Nat {
 		// cost is very similar since the constant time subtraction tells us if
 		// x >= m as a side effect, and taking care of the broken invariant is
 		// highly undesirable (see https://go.dev/issue/13907).
-		copy(x.reset(n).Limbs, T[n:])
+		copy(x.Reset(n).Limbs, T[n:])
 		x.maybeSubtractModulus(Choice(c), m)
 
 	// The following specialized cases follow the exact same algorithm, but
@@ -765,7 +765,7 @@ func (x *Nat) montgomeryMul(a *Nat, b *Nat, m *Modulus) *Nat {
 			c2 := addMulVVW1024(&T[i], &mLimbs[0], Y)
 			T[n+i], c = bits.Add(c1, c2, c)
 		}
-		copy(x.reset(n).Limbs, T[n:])
+		copy(x.Reset(n).Limbs, T[n:])
 		x.maybeSubtractModulus(Choice(c), m)
 
 	case 1536 / _W:
@@ -779,7 +779,7 @@ func (x *Nat) montgomeryMul(a *Nat, b *Nat, m *Modulus) *Nat {
 			c2 := addMulVVW1536(&T[i], &mLimbs[0], Y)
 			T[n+i], c = bits.Add(c1, c2, c)
 		}
-		copy(x.reset(n).Limbs, T[n:])
+		copy(x.Reset(n).Limbs, T[n:])
 		x.maybeSubtractModulus(Choice(c), m)
 
 	case 2048 / _W:
@@ -793,7 +793,7 @@ func (x *Nat) montgomeryMul(a *Nat, b *Nat, m *Modulus) *Nat {
 			c2 := addMulVVW2048(&T[i], &mLimbs[0], Y)
 			T[n+i], c = bits.Add(c1, c2, c)
 		}
-		copy(x.reset(n).Limbs, T[n:])
+		copy(x.Reset(n).Limbs, T[n:])
 		x.maybeSubtractModulus(Choice(c), m)
 	}
 
