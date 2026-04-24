@@ -504,6 +504,31 @@ func IsUnsafe(f *ssa.Func) bool {
 	return base.Flag.CompilingRuntime || f.NoSplit
 }
 
+// findWBFlagLoad walks backwards from v through single-argument chains
+// to find the load of writeBarrier.enabled. Returns the load Value if
+// found, nil otherwise.
+func findWBFlagLoad(v *ssa.Value) *ssa.Value {
+	for {
+		if v.Op == ssa.OpPhi || len(v.Args) == 0 {
+			return nil
+		}
+		if v.MemoryArg() != nil {
+			if sym, ok := v.Aux.(*obj.LSym); ok && sym == ir.Syms.WriteBarrier {
+				return v
+			}
+			if sym, ok := v.Args[0].Aux.(*obj.LSym); ok && sym == ir.Syms.WriteBarrier {
+				return v
+			}
+			return nil
+		}
+		if len(v.Args) == 1 || (len(v.Args) == 2 && v.Args[0] == v.Args[1]) {
+			v = v.Args[0]
+			continue
+		}
+		return nil
+	}
+}
+
 // markUnsafePoints finds unsafe points and computes lv.unsafePoints.
 func (lv *Liveness) markUnsafePoints() {
 	if IsUnsafe(lv.f) {
@@ -606,6 +631,18 @@ func (lv *Liveness) markUnsafePoints() {
 					// Note: 386 lowers Neq32 to (TESTL cond cond),
 					v = v.Args[0]
 					continue
+				}
+				// The WB condition may be combined with a nil pointer check
+				// (e.g., AND of WB flag test and ptr != nil). Search both
+				// arg chains to find the one leading to the WB flag load.
+				if len(v.Args) == 2 {
+					load = findWBFlagLoad(v.Args[0])
+					if load == nil {
+						load = findWBFlagLoad(v.Args[1])
+					}
+					if load != nil {
+						break
+					}
 				}
 				v.Fatalf("write barrier control value has more than one argument: %s", v.LongString())
 			}

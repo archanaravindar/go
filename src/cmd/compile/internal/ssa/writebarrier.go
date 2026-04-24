@@ -440,6 +440,9 @@ func writebarrier(f *Func) {
 		}
 
 		// Find all the pointers we need to write to the buffer.
+		var srcEntries int  // number of src pointer entries added
+		var dstEntries int  // number of dst (old value) entries added
+		var onlySrcVal *Value // if exactly one src entry and no dst entries, this is that value
 		for _, w := range stores {
 			if w.Op != OpStoreWB {
 				continue
@@ -450,6 +453,8 @@ func writebarrier(f *Func) {
 			if !srcs.contains(val.ID) && needWBsrc(val) {
 				srcs.add(val.ID)
 				addEntry(pos, val)
+				srcEntries++
+				onlySrcVal = val
 			}
 			if !dsts.contains(ptr.ID) && needWBdst(ptr, w.Args[2], zeroes) {
 				dsts.add(ptr.ID)
@@ -466,11 +471,38 @@ func writebarrier(f *Func) {
 				oldVal := bThen.NewValue2(pos, OpLoad, types.Types[types.TUINTPTR], ptr, memThen)
 				// Save old value to write buffer.
 				addEntry(pos, oldVal)
+				dstEntries++
 			}
 			f.fe.Func().SetWBPos(pos)
 			nWBops--
 		}
 		flush()
+
+		// Optimization: for the single-src-pointer case (gcWriteBarrier1 with
+		// only a src value, no old dst value), strengthen block b's condition
+		// to also check that the pointer is non-nil. Nil pointers are never
+		// heap pointers, so the GC does not need to track them. This avoids
+		// the gcWriteBarrier1 call entirely when the value is nil at runtime.
+		// This is safe because:
+		// - The block structure is unchanged (same diamond, same 2-arg Phi).
+		// - The actual store (*dst = val) in bEnd still executes unconditionally.
+		// - We only skip the write barrier recording, not the store itself.
+		if srcEntries == 1 && dstEntries == 0 && !hasMove && onlySrcVal != nil {
+			hasZeroWB := false
+			for _, w := range stores {
+				if w.Op == OpZeroWB {
+					hasZeroWB = true
+					break
+				}
+			}
+			if !hasZeroWB {
+				constNil := f.ConstNil(f.Config.Types.BytePtr)
+				ptrNotNil := b.NewValue2(pos, OpNeqPtr, cfgtypes.Bool, onlySrcVal, constNil)
+				oldCond := b.Controls[0]
+				newCond := b.NewValue2(pos, OpAndB, cfgtypes.Bool, oldCond, ptrNotNil)
+				b.SetControl(newCond)
+			}
+		}
 
 		// Now do the rare cases, Zeros and Moves.
 		for _, w := range stores {

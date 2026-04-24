@@ -101,3 +101,30 @@ func writeDoubleNil(p *[2]*int) {
 	p[0] = nil
 	p[1] = nil
 }
+
+type wbNode struct {
+	left  *wbNode
+	right *wbNode
+}
+
+func wbNilCheckNewAlloc(val *wbNode) *wbNode {
+	n := new(wbNode)
+	// When storing a possibly-nil pointer to a newly allocated object,
+	// the write barrier condition should include a nil check on val
+	// (via ANDL combining the WB flag test with a pointer nil test),
+	// so that gcWriteBarrier1 is skipped entirely when val is nil.
+	// amd64:`TESTQ`
+	// amd64:`ANDL`
+	// amd64:`.*runtime[.]gcWriteBarrier1\(SB\)`
+	n.left = val
+	return n
+}
+
+func wbNoNilCheckExisting(n *wbNode, val *wbNode) {
+	// When storing to an existing (non-newly-allocated) object, both
+	// src and dst pointers need WB recording. The nil check optimization
+	// should NOT apply here — no ANDL combining conditions.
+	// amd64:-`ANDL`
+	// amd64:`.*runtime[.]gcWriteBarrier2\(SB\)`
+	n.left = val
+}
