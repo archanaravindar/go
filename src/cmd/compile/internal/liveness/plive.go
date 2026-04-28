@@ -504,7 +504,7 @@ func IsUnsafe(f *ssa.Func) bool {
 	return base.Flag.CompilingRuntime || f.NoSplit
 }
 
-// findWBFlagLoad walks backwards from v through single-argument chains
+// findWBFlagLoad walks backwards from v through argument chains
 // to find the load of writeBarrier.enabled. Returns the load Value if
 // found, nil otherwise.
 func findWBFlagLoad(v *ssa.Value) *ssa.Value {
@@ -523,6 +523,15 @@ func findWBFlagLoad(v *ssa.Value) *ssa.Value {
 		}
 		if len(v.Args) == 1 || (len(v.Args) == 2 && v.Args[0] == v.Args[1]) {
 			v = v.Args[0]
+			continue
+		}
+		// Handle 2-arg ops like CMPW on ppc64le where the comparison
+		// has two different args (flag value and a constant).
+		if len(v.Args) == 2 {
+			if r := findWBFlagLoad(v.Args[0]); r != nil {
+				return r
+			}
+			v = v.Args[1]
 			continue
 		}
 		return nil

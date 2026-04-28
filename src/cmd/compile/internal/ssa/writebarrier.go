@@ -487,7 +487,11 @@ func writebarrier(f *Func) {
 		// - The block structure is unchanged (same diamond, same 2-arg Phi).
 		// - The actual store (*dst = val) in bEnd still executes unconditionally.
 		// - We only skip the write barrier recording, not the store itself.
-		if srcEntries == 1 && dstEntries == 0 && !hasMove && onlySrcVal != nil {
+		if f.pass.debug > 0 {
+			fmt.Printf("  [wb-nilopt] func %s, block %s: srcEntries=%d dstEntries=%d hasMove=%v onlySrcVal=%v nWBops=%d\n",
+				f.Name, b, srcEntries, dstEntries, hasMove, onlySrcVal != nil, nWBops)
+		}
+		if srcEntries == 1 && dstEntries == 0 && !hasMove && onlySrcVal != nil && nWBops == 0 {
 			hasZeroWB := false
 			for _, w := range stores {
 				if w.Op == OpZeroWB {
@@ -496,12 +500,20 @@ func writebarrier(f *Func) {
 				}
 			}
 			if !hasZeroWB {
+				if f.pass.debug > 0 {
+					fmt.Printf("  [wb-nilopt] APPLYING nil check optimization: val=%v (%s) in %s\n",
+						onlySrcVal, onlySrcVal.Op, f.Name)
+				}
 				constNil := f.ConstNil(f.Config.Types.BytePtr)
 				ptrNotNil := b.NewValue2(pos, OpNeqPtr, cfgtypes.Bool, onlySrcVal, constNil)
 				oldCond := b.Controls[0]
 				newCond := b.NewValue2(pos, OpAndB, cfgtypes.Bool, oldCond, ptrNotNil)
 				b.SetControl(newCond)
+			} else if f.pass.debug > 0 {
+				fmt.Printf("  [wb-nilopt] SKIPPED: hasZeroWB=true in %s\n", f.Name)
 			}
+		} else if f.pass.debug > 0 {
+			fmt.Printf("  [wb-nilopt] SKIPPED: conditions not met in %s\n", f.Name)
 		}
 
 		// Now do the rare cases, Zeros and Moves.
