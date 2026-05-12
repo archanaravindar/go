@@ -1074,6 +1074,7 @@ const (
 	OpAMD64LoweredGetCallerSP
 	OpAMD64LoweredNilCheck
 	OpAMD64LoweredWB
+	OpAMD64LoweredWB2Ptrs
 	OpAMD64LoweredHasCPUFeature
 	OpAMD64LoweredPanicBoundsRR
 	OpAMD64LoweredPanicBoundsRC
@@ -5991,6 +5992,7 @@ const (
 	OpZeroWB
 	OpWBend
 	OpWB
+	OpWB2Ptrs
 	OpHasCPUFeature
 	OpPanicBounds
 	OpPanicExtend
@@ -18268,6 +18270,21 @@ var opcodeTable = [...]opInfo{
 		argLen:       1,
 		clobberFlags: true,
 		reg: regInfo{
+			clobbers: 2147418112, // X0 X1 X2 X3 X4 X5 X6 X7 X8 X9 X10 X11 X12 X13 X14
+			outputs: []outputInfo{
+				{0, 2048}, // R11
+			},
+		},
+	},
+	{
+		name:         "LoweredWB2Ptrs",
+		argLen:       3,
+		clobberFlags: true,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1}, // AX
+				{1, 4}, // DX
+			},
 			clobbers: 2147418112, // X0 X1 X2 X3 X4 X5 X6 X7 X8 X9 X10 X11 X12 X13 X14
 			outputs: []outputInfo{
 				{0, 2048}, // R11
@@ -88258,6 +88275,11 @@ var opcodeTable = [...]opInfo{
 		name:    "WB",
 		auxType: auxInt64,
 		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "WB2Ptrs",
+		argLen:  3,
 		generic: true,
 	},
 	{

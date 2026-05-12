@@ -1355,6 +1355,14 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// AuxInt encodes how many buffer entries we need.
 		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
 
+	case ssa.OpAMD64LoweredWB2Ptrs:
+		// Like LoweredWB but calls gcWriteBarrier2Ptrs.
+		// arg1 and arg2 are the two pointers (ignored for now).
+		p := s.Prog(obj.ACALL)
+		p.To.Type = obj.TYPE_MEM
+		p.To.Name = obj.NAME_EXTERN
+		p.To.Sym = ir.Syms.GCWriteBarrier2Ptrs
+
 	case ssa.OpAMD64LoweredPanicBoundsRR, ssa.OpAMD64LoweredPanicBoundsRC, ssa.OpAMD64LoweredPanicBoundsCR, ssa.OpAMD64LoweredPanicBoundsCC:
 		// Compute the constant we put in the PCData entry for this call.
 		code, signed := ssa.BoundsKind(v.AuxInt).Code()

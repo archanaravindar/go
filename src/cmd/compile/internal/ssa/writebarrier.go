@@ -420,6 +420,17 @@ func writebarrier(f *Func) {
 			if len(writes) == 0 {
 				return
 			}
+			// For 2-pointer writes on AMD64, use WB2Ptrs which passes pointers
+			// in fixed registers (AX, DX). The assembly function handles nil
+			// checking and buffer stores internally - no compiler stores needed.
+			if len(writes) == 2 && f.Config.arch == "amd64" {
+				t := types.NewTuple(types.Types[types.TUINTPTR].PtrTo(), types.TypeMem)
+				call := bThen.NewValue3(pos, OpWB2Ptrs, t, writes[0].ptr, writes[1].ptr, memThen)
+				// Assembly handles stores, so we only need the memory output.
+				memThen = bThen.NewValue1(pos, OpSelect1, types.TypeMem, call)
+				writes = writes[:0]
+				return
+			}
 			// Issue a call to get a write barrier buffer.
 			t := types.NewTuple(types.Types[types.TUINTPTR].PtrTo(), types.TypeMem)
 			call := bThen.NewValue1I(pos, OpWB, t, int64(len(writes)), memThen)

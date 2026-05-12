@@ -1120,6 +1120,10 @@ func init() {
 		// Returns a pointer to a write barrier buffer in R11.
 		{name: "LoweredWB", argLength: 1, reg: regInfo{clobbers: callerSave &^ (gp | g), outputs: []regMask{buildReg("R11")}}, clobberFlags: true, aux: "Int64"},
 
+		// LoweredWB2Ptrs invokes runtime.gcWriteBarrier2Ptrs. arg0=ptr1 in AX, arg1=ptr2 in DX, arg2=mem.
+		// Like LoweredWB but takes the two pointer values in fixed registers for assembly nil filtering.
+		{name: "LoweredWB2Ptrs", argLength: 3, reg: regInfo{inputs: []regMask{buildReg("AX"), buildReg("DX"), 0}, clobbers: callerSave &^ (gp | g), outputs: []regMask{buildReg("R11")}}, clobberFlags: true},
+
 		{name: "LoweredHasCPUFeature", argLength: 0, reg: gp01, rematerializeable: true, typ: "UInt64", aux: "Sym", symEffect: "None"},
 
 		// LoweredPanicBoundsRR takes x and y, two values that caused a bounds check to fail.

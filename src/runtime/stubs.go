@@ -431,6 +431,7 @@ func gcWriteBarrier1()
 //
 //go:linkname gcWriteBarrier2
 func gcWriteBarrier2()
+func gcWriteBarrier2Ptrs()
 
 func gcWriteBarrier3()
 func gcWriteBarrier4()

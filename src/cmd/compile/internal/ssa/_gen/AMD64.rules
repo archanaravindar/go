@@ -535,6 +535,7 @@
 
 // Write barrier.
 (WB ...) => (LoweredWB ...)
+(WB2Ptrs ...) => (LoweredWB2Ptrs ...)
 
 (PanicBounds ...) => (LoweredPanicBoundsRR ...)
 (LoweredPanicBoundsRR [kind] x (MOVQconst [c]) mem) => (LoweredPanicBoundsRC [kind] x {PanicBoundsC{C:c}} mem)

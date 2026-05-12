@@ -123,6 +123,7 @@ func InitConfig() {
 	ir.Syms.GCWriteBarrier[5] = typecheck.LookupRuntimeFunc("gcWriteBarrier6")
 	ir.Syms.GCWriteBarrier[6] = typecheck.LookupRuntimeFunc("gcWriteBarrier7")
 	ir.Syms.GCWriteBarrier[7] = typecheck.LookupRuntimeFunc("gcWriteBarrier8")
+	ir.Syms.GCWriteBarrier2Ptrs = typecheck.LookupRuntimeFunc("gcWriteBarrier2Ptrs")
 	ir.Syms.Goschedguarded = typecheck.LookupRuntimeFunc("goschedguarded")
 	ir.Syms.Growslice = typecheck.LookupRuntimeFunc("growslice")
 	ir.Syms.GrowsliceBuf = typecheck.LookupRuntimeFunc("growsliceBuf")
@@ -8025,6 +8026,8 @@ func (e *ssafn) Syslook(name string) *obj.LSym {
 		return ir.Syms.CgoCheckMemmove
 	case "cgoCheckPtrWrite":
 		return ir.Syms.CgoCheckPtrWrite
+	case "gcWriteBarrier2Ptrs":
+		return ir.Syms.GCWriteBarrier2Ptrs
 	}
 	e.Fatalf(src.NoXPos, "unknown Syslook func %v", name)
 	return nil

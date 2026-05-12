@@ -1853,6 +1853,33 @@ TEXT runtime·gcWriteBarrier1<ABIInternal>(SB),NOSPLIT|NOFRAME,$0
 TEXT runtime·gcWriteBarrier2<ABIInternal>(SB),NOSPLIT|NOFRAME,$0
 	MOVL   $16, R11
 	JMP     gcWriteBarrier<>(SB)
+// gcWriteBarrier2Ptrs takes two pointers in AX and DX, nil-checks each,
+// and only writes non-nil ones to the WB buffer.
+// AX and DX are preserved by gcWriteBarrier<> across flush.
+TEXT runtime·gcWriteBarrier2Ptrs<ABIInternal>(SB),NOSPLIT,$0
+	// Count non-nil pointers.
+	XORL	R11, R11
+	TESTQ	AX, AX
+	SETNE	R11B
+	TESTQ	DX, DX
+	JZ	counted
+	INCL	R11
+counted:
+	TESTL	R11, R11
+	JZ	done
+	SHLQ	$3, R11		// R11 = count * 8 (bytes needed)
+	CALL	gcWriteBarrier<>(SB)
+	// R11 = buffer pointer. Store non-nil pointers consecutively.
+	TESTQ	AX, AX
+	JZ	skip_ax
+	MOVQ	AX, (R11)
+	ADDQ	$8, R11
+skip_ax:
+	TESTQ	DX, DX
+	JZ	done
+	MOVQ	DX, (R11)
+done:
+	RET
 TEXT runtime·gcWriteBarrier3<ABIInternal>(SB),NOSPLIT|NOFRAME,$0
 	MOVL   $24, R11
 	JMP     gcWriteBarrier<>(SB)

@@ -415,6 +415,10 @@ var genericOps = []opData{
 	// arch-dependent), and is not a safe-point.
 	{name: "WB", argLength: 1, typ: "(BytePtr,Mem)", aux: "Int64"}, // arg0=mem, auxint=# of buffer entries needed. Returns buffer pointer and memory.
 
+	// WB2Ptrs is like WB but takes two pointer args for nil-check filtering.
+	// arg0=ptr1 (new pointer), arg1=ptr2 (old pointer), arg2=mem. Returns buffer pointer and memory.
+	{name: "WB2Ptrs", argLength: 3, typ: "(BytePtr,Mem)"},
+
 	{name: "HasCPUFeature", argLength: 0, typ: "bool", aux: "Sym", symEffect: "None"}, // aux=place that this feature flag can be loaded from
 
 	// PanicBounds and PanicExtend generate a runtime panic.
