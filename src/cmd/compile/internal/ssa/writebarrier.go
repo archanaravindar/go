@@ -355,6 +355,31 @@ func writebarrier(f *Func) {
 			}
 		}
 
+		// Nil filter detection: if there is exactly one OpStoreWB that would
+		// need both a src and dst WB entry, we can check at runtime whether
+		// the old heap value is nil and call WB1 instead of WB2.
+		canNilFilter := false
+		var nilFilterStore *Value
+		{
+			nStoreWB, nOtherWB := 0, 0
+			for _, w := range stores {
+				switch w.Op {
+				case OpStoreWB:
+					nStoreWB++
+					nilFilterStore = w
+				case OpMoveWB, OpZeroWB:
+					nOtherWB++
+				}
+			}
+			if nStoreWB == 1 && nOtherWB == 0 {
+				val := nilFilterStore.Args[1]
+				ptr := nilFilterStore.Args[0]
+				if needWBsrc(val) && needWBdst(ptr, nilFilterStore.Args[2], zeroes) {
+					canNilFilter = true
+				}
+			}
+		}
+
 		// Build branch point.
 		bThen := f.NewBlock(BlockPlain)
 		bEnd := f.NewBlock(b.Kind)
@@ -381,7 +406,9 @@ func writebarrier(f *Func) {
 		b.Succs = b.Succs[:0]
 		b.AddEdgeTo(bThen)
 		b.AddEdgeTo(bEnd)
-		bThen.AddEdgeTo(bEnd)
+		if !canNilFilter {
+			bThen.AddEdgeTo(bEnd)
+		}
 
 		// For each write barrier store, append write barrier code to bThen.
 		memThen := mem
@@ -439,38 +466,125 @@ func writebarrier(f *Func) {
 			}
 		}
 
-		// Find all the pointers we need to write to the buffer.
-		for _, w := range stores {
-			if w.Op != OpStoreWB {
-				continue
-			}
-			pos := w.Pos
-			ptr := w.Args[0]
+		if canNilFilter {
+			// Runtime nil filter: check if the old heap value is nil.
+			// If nil, call WB1 (record only the new value); otherwise WB2.
+			// This is the common case for stores to freshly allocated fields.
+			//
+			// CFG shape inside the wb-enabled region:
+			//
+			//   bThen (BlockIf: IsNonNil(oldVal))
+			//     true  → bNotNil [WB2: buf[0]=val, buf[1]=oldVal] → bMerge
+			//     false → bNilOld [WB1: buf[0]=val]                → bMerge
+			//   bMerge: Phi<mem> + WBend                           → bEnd
+			//
+			// bMerge contains WBend (a non-Phi value) so the trim pass cannot
+			// collapse it. bEnd therefore keeps its 2-predecessor Phi, and
+			// the existing plive.go diamond detection handles bMerge unchanged.
+			w := nilFilterStore
+			wpos := w.Pos
+			ptrLoad := w.Args[0]
 			val := w.Args[1]
-			if !srcs.contains(val.ID) && needWBsrc(val) {
-				srcs.add(val.ID)
-				addEntry(pos, val)
+			if ptrLoad == nilcheck {
+				ptrLoad = nilcheckThen
 			}
-			if !dsts.contains(ptr.ID) && needWBdst(ptr, w.Args[2], zeroes) {
-				dsts.add(ptr.ID)
-				// Load old value from store target.
-				// Note: This turns bad pointer writes into bad
-				// pointer reads, which could be confusing. We could avoid
-				// reading from obviously bad pointers, which would
-				// take care of the vast majority of these. We could
-				// patch this up in the signal handler, or use XCHG to
-				// combine the read and the write.
-				if ptr == nilcheck {
-					ptr = nilcheckThen
-				}
-				oldVal := bThen.NewValue2(pos, OpLoad, types.Types[types.TUINTPTR], ptr, memThen)
-				// Save old value to write buffer.
-				addEntry(pos, oldVal)
-			}
-			f.fe.Func().SetWBPos(pos)
+
+			// Load the old heap value inside bThen, before the branch.
+			oldVal := bThen.NewValue2(wpos, OpLoad, types.Types[types.TUINTPTR], ptrLoad, memThen)
+
+			// bThen becomes BlockIf: IsNonNil(oldVal)?
+			isOldNonNil := bThen.NewValue1(wpos, OpIsNonNil, cfgtypes.Bool, oldVal)
+			bThen.Kind = BlockIf
+			bThen.SetControl(isOldNonNil)
+
+			bNotNil := f.NewBlock(BlockPlain) // old != nil: WB2
+			bNilOld := f.NewBlock(BlockPlain) // old == nil: WB1
+			bMerge := f.NewBlock(BlockPlain)  // inner merge; holds WBend
+			bNotNil.Pos = wpos
+			bNilOld.Pos = wpos
+			bMerge.Pos = wpos
+
+			bThen.AddEdgeTo(bNotNil) // true branch
+			bThen.AddEdgeTo(bNilOld) // false branch
+
+			// bNotNil: WB2 — record both val and oldVal.
+			t := types.NewTuple(types.Types[types.TUINTPTR].PtrTo(), types.TypeMem)
+			callNotNil := bNotNil.NewValue1I(wpos, OpWB, t, 2, memThen)
+			bufNotNil := bNotNil.NewValue1(wpos, OpSelect0, types.Types[types.TUINTPTR].PtrTo(), callNotNil)
+			memNotNil := bNotNil.NewValue1(wpos, OpSelect1, types.TypeMem, callNotNil)
+			buf0 := bNotNil.NewValue1I(wpos, OpOffPtr, types.Types[types.TUINTPTR].PtrTo(), 0, bufNotNil)
+			memNotNil = bNotNil.NewValue3A(wpos, OpStore, types.TypeMem, types.Types[types.TUINTPTR], buf0, val, memNotNil)
+			buf1 := bNotNil.NewValue1I(wpos, OpOffPtr, types.Types[types.TUINTPTR].PtrTo(), f.Config.PtrSize, bufNotNil)
+			memNotNil = bNotNil.NewValue3A(wpos, OpStore, types.TypeMem, types.Types[types.TUINTPTR], buf1, oldVal, memNotNil)
+			bNotNil.AddEdgeTo(bMerge)
+
+			// bNilOld: WB1 — record only val; old is nil so shade(nil) is a no-op.
+			callNil := bNilOld.NewValue1I(wpos, OpWB, t, 1, memThen)
+			bufNil := bNilOld.NewValue1(wpos, OpSelect0, types.Types[types.TUINTPTR].PtrTo(), callNil)
+			memNilPath := bNilOld.NewValue1(wpos, OpSelect1, types.TypeMem, callNil)
+			bufN := bNilOld.NewValue1I(wpos, OpOffPtr, types.Types[types.TUINTPTR].PtrTo(), 0, bufNil)
+			memNilPath = bNilOld.NewValue3A(wpos, OpStore, types.TypeMem, types.Types[types.TUINTPTR], bufN, val, memNilPath)
+			bNilOld.AddEdgeTo(bMerge)
+
+			// bMerge: 2-arg Phi then WBend.
+			// WBend makes bMerge non-empty, preventing the trim pass from
+			// collapsing it (which would give bEnd 3 predecessors and break
+			// plive.go's 2-arg Phi assertion).
+			memMerge := bMerge.NewValue0(wpos, OpPhi, types.TypeMem)
+			memMerge.AddArg(memNotNil)
+			memMerge.AddArg(memNilPath)
+
+			// Reuse 'last' (the original OpStoreWB) as the WBend marker in bMerge.
+			bMerge.Values = append(bMerge.Values, last)
+			last.Block = bMerge
+			last.reset(OpWBend)
+			last.Pos = last.Pos.WithNotStmt()
+			last.Type = types.TypeMem
+			last.AddArg(memMerge)
+
+			bMerge.AddEdgeTo(bEnd)
+
+			// memThen for bEnd's 2-arg Phi = WBend result from bMerge.
+			memThen = last
+
+			srcs.add(val.ID)
+			dsts.add(w.Args[0].ID)
+			f.fe.Func().SetWBPos(wpos)
 			nWBops--
+		} else {
+			// Find all the pointers we need to write to the buffer.
+			for _, w := range stores {
+				if w.Op != OpStoreWB {
+					continue
+				}
+				pos := w.Pos
+				ptr := w.Args[0]
+				val := w.Args[1]
+				if !srcs.contains(val.ID) && needWBsrc(val) {
+					srcs.add(val.ID)
+					addEntry(pos, val)
+				}
+				if !dsts.contains(ptr.ID) && needWBdst(ptr, w.Args[2], zeroes) {
+					dsts.add(ptr.ID)
+					// Load old value from store target.
+					// Note: This turns bad pointer writes into bad
+					// pointer reads, which could be confusing. We could avoid
+					// reading from obviously bad pointers, which would
+					// take care of the vast majority of these. We could
+					// patch this up in the signal handler, or use XCHG to
+					// combine the read and the write.
+					if ptr == nilcheck {
+						ptr = nilcheckThen
+					}
+					oldVal := bThen.NewValue2(pos, OpLoad, types.Types[types.TUINTPTR], ptr, memThen)
+					// Save old value to write buffer.
+					addEntry(pos, oldVal)
+				}
+				f.fe.Func().SetWBPos(pos)
+				nWBops--
+			}
+			flush()
 		}
-		flush()
 
 		// Now do the rare cases, Zeros and Moves.
 		for _, w := range stores {
@@ -561,12 +675,16 @@ func writebarrier(f *Func) {
 		// pass to determine what parts of the code are preemption-unsafe.
 		// All subsequent memory operations use this memory, so we have to sacrifice the
 		// previous last memory op to become this new value.
-		bEnd.Values = append(bEnd.Values, last)
-		last.Block = bEnd
-		last.reset(OpWBend)
-		last.Pos = last.Pos.WithNotStmt()
-		last.Type = types.TypeMem
-		last.AddArg(mem)
+		// In the nil-filter case WBend was already placed in bMerge (inside bThen's
+		// subgraph), so skip this placement.
+		if !canNilFilter {
+			bEnd.Values = append(bEnd.Values, last)
+			last.Block = bEnd
+			last.reset(OpWBend)
+			last.Pos = last.Pos.WithNotStmt()
+			last.Type = types.TypeMem
+			last.AddArg(mem)
+		}
 
 		// Free all the old stores, except last which became the WBend marker.
 		for _, w := range stores {
