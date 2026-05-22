@@ -415,6 +415,13 @@ var genericOps = []opData{
 	// arch-dependent), and is not a safe-point.
 	{name: "WB", argLength: 1, typ: "(BytePtr,Mem)", aux: "Int64"}, // arg0=mem, auxint=# of buffer entries needed. Returns buffer pointer and memory.
 
+	// WBNilFilter2 is a nil-filtered write barrier for 2 entries.
+	// It checks if arg1 (oldVal) is nil at runtime. If non-nil, calls
+	// gcWriteBarrier2 and records both arg0 (val) and arg1 (oldVal)
+	// in the buffer. If nil, calls gcWriteBarrier1 and records only
+	// arg0 (val). arg0=val, arg1=oldVal, arg2=mem. Returns mem.
+	{name: "WBNilFilter2", argLength: 3, typ: "Mem"},
+
 	{name: "HasCPUFeature", argLength: 0, typ: "bool", aux: "Sym", symEffect: "None"}, // aux=place that this feature flag can be loaded from
 
 	// PanicBounds and PanicExtend generate a runtime panic.

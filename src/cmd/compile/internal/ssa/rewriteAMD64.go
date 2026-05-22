@@ -7064,6 +7064,9 @@ func rewriteValueAMD64(v *Value) bool {
 	case OpWB:
 		v.Op = OpAMD64LoweredWB
 		return true
+	case OpWBNilFilter2:
+		v.Op = OpAMD64LoweredWBNilFilter2
+		return true
 	case OpXor16:
 		v.Op = OpAMD64XORL
 		return true

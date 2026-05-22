@@ -1125,6 +1125,16 @@ func init() {
 		// Returns a pointer to a write barrier buffer in R11.
 		{name: "LoweredWB", argLength: 1, reg: regInfo{clobbers: callerSave.minus(gp.union(g)), outputs: []regMask{buildReg("R11")}}, clobberFlags: true, aux: "Int64"},
 
+		// LoweredWBNilFilter2 is a nil-filtered write barrier for 2 entries.
+		// It checks if arg1 (oldVal) is nil. If non-nil, calls gcWriteBarrier2
+		// and stores arg0 (val) and arg1 (oldVal) to the buffer. If nil, calls
+		// gcWriteBarrier1 and stores only arg0 (val). arg0=val, arg1=oldVal, arg2=mem.
+		// Returns mem. R11 is used internally for the buffer pointer.
+		{name: "LoweredWBNilFilter2", argLength: 3, reg: regInfo{
+			inputs:   []regMask{gp &^ buildReg("R11"), gp &^ buildReg("R11")},
+			clobbers: (callerSave &^ (gp | g)) | buildReg("R11"),
+		}, clobberFlags: true},
+
 		{name: "LoweredHasCPUFeature", argLength: 0, reg: gp01, rematerializeable: true, typ: "UInt64", aux: "Sym", symEffect: "None"},
 
 		// LoweredPanicBoundsRR takes x and y, two values that caused a bounds check to fail.
