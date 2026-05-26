@@ -420,6 +420,16 @@ func writebarrier(f *Func) {
 			if len(writes) == 0 {
 				return
 			}
+			// Nil-filtered WB for exactly 2 entries (val + oldVal from a
+			// single store): check if oldVal is nil at runtime and call
+			// gcWriteBarrier1 instead of gcWriteBarrier2 when it is.
+			if len(writes) == 2 && wbNilFilterSupported() {
+				val := writes[0].ptr
+				oldVal := writes[1].ptr
+				memThen = bThen.NewValue3(writes[0].pos, OpWBNilFilter2, types.TypeMem, val, oldVal, memThen)
+				writes = writes[:0]
+				return
+			}
 			// Issue a call to get a write barrier buffer.
 			t := types.NewTuple(types.Types[types.TUINTPTR].PtrTo(), types.TypeMem)
 			call := bThen.NewValue1I(pos, OpWB, t, int64(len(writes)), memThen)
@@ -439,38 +449,40 @@ func writebarrier(f *Func) {
 			}
 		}
 
-		// Find all the pointers we need to write to the buffer.
-		for _, w := range stores {
-			if w.Op != OpStoreWB {
-				continue
-			}
-			pos := w.Pos
-			ptr := w.Args[0]
-			val := w.Args[1]
-			if !srcs.contains(val.ID) && needWBsrc(val) {
-				srcs.add(val.ID)
-				addEntry(pos, val)
-			}
-			if !dsts.contains(ptr.ID) && needWBdst(ptr, w.Args[2], zeroes) {
-				dsts.add(ptr.ID)
-				// Load old value from store target.
-				// Note: This turns bad pointer writes into bad
-				// pointer reads, which could be confusing. We could avoid
-				// reading from obviously bad pointers, which would
-				// take care of the vast majority of these. We could
-				// patch this up in the signal handler, or use XCHG to
-				// combine the read and the write.
-				if ptr == nilcheck {
-					ptr = nilcheckThen
+		{
+			// Find all the pointers we need to write to the buffer.
+			for _, w := range stores {
+				if w.Op != OpStoreWB {
+					continue
 				}
-				oldVal := bThen.NewValue2(pos, OpLoad, types.Types[types.TUINTPTR], ptr, memThen)
-				// Save old value to write buffer.
-				addEntry(pos, oldVal)
+				pos := w.Pos
+				ptr := w.Args[0]
+				val := w.Args[1]
+				if !srcs.contains(val.ID) && needWBsrc(val) {
+					srcs.add(val.ID)
+					addEntry(pos, val)
+				}
+				if !dsts.contains(ptr.ID) && needWBdst(ptr, w.Args[2], zeroes) {
+					dsts.add(ptr.ID)
+					// Load old value from store target.
+					// Note: This turns bad pointer writes into bad
+					// pointer reads, which could be confusing. We could avoid
+					// reading from obviously bad pointers, which would
+					// take care of the vast majority of these. We could
+					// patch this up in the signal handler, or use XCHG to
+					// combine the read and the write.
+					if ptr == nilcheck {
+						ptr = nilcheckThen
+					}
+					oldVal := bThen.NewValue2(pos, OpLoad, types.Types[types.TUINTPTR], ptr, memThen)
+					// Save old value to write buffer.
+					addEntry(pos, oldVal)
+				}
+				f.fe.Func().SetWBPos(pos)
+				nWBops--
 			}
-			f.fe.Func().SetWBPos(pos)
-			nWBops--
+			flush()
 		}
-		flush()
 
 		// Now do the rare cases, Zeros and Moves.
 		for _, w := range stores {
@@ -693,6 +705,16 @@ func (f *Func) computeZeroMap(select1 []*Value) map[ID]ZeroRegion {
 		}
 	}
 	return zeroes
+}
+
+// wbNilFilterSupported reports whether the target architecture has
+// a LoweredWBNilFilter2 op that can inline the nil check.
+func wbNilFilterSupported() bool {
+	switch buildcfg.GOARCH {
+	case "amd64", "ppc64le", "ppc64":
+		return true
+	}
+	return false
 }
 
 // wbcall emits write barrier runtime call in b, returns memory.

@@ -1381,6 +1381,67 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// AuxInt encodes how many buffer entries we need.
 		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
 
+	case ssa.OpAMD64LoweredWBNilFilter2:
+		// Nil-filtered write barrier: check if oldVal (arg1) is nil.
+		// If non-nil: gcWriteBarrier2, store val+oldVal.
+		// If nil: gcWriteBarrier1, store val only.
+		valReg := v.Args[0].Reg()
+		oldValReg := v.Args[1].Reg()
+
+		// TESTQ oldVal, oldVal
+		test := s.Prog(x86.ATESTQ)
+		test.From.Type = obj.TYPE_REG
+		test.From.Reg = oldValReg
+		test.To.Type = obj.TYPE_REG
+		test.To.Reg = oldValReg
+
+		// JEQ .Lnil
+		jnil := s.Prog(x86.AJEQ)
+		jnil.To.Type = obj.TYPE_BRANCH
+
+		// CALL gcWriteBarrier2
+		call2 := s.Prog(obj.ACALL)
+		call2.To.Type = obj.TYPE_MEM
+		call2.To.Name = obj.NAME_EXTERN
+		call2.To.Sym = ir.Syms.GCWriteBarrier[1] // gcWriteBarrier2
+
+		// MOVQ val, 0(R11)
+		st0 := s.Prog(x86.AMOVQ)
+		st0.From.Type = obj.TYPE_REG
+		st0.From.Reg = valReg
+		st0.To.Type = obj.TYPE_MEM
+		st0.To.Reg = x86.REG_R11
+
+		// MOVQ oldVal, 8(R11)
+		st1 := s.Prog(x86.AMOVQ)
+		st1.From.Type = obj.TYPE_REG
+		st1.From.Reg = oldValReg
+		st1.To.Type = obj.TYPE_MEM
+		st1.To.Reg = x86.REG_R11
+		st1.To.Offset = 8
+
+		// JMP .Ldone
+		jdone := s.Prog(obj.AJMP)
+		jdone.To.Type = obj.TYPE_BRANCH
+
+		// .Lnil: CALL gcWriteBarrier1
+		call1 := s.Prog(obj.ACALL)
+		call1.To.Type = obj.TYPE_MEM
+		call1.To.Name = obj.NAME_EXTERN
+		call1.To.Sym = ir.Syms.GCWriteBarrier[0] // gcWriteBarrier1
+		jnil.To.SetTarget(call1)
+
+		// MOVQ val, 0(R11)
+		st0nil := s.Prog(x86.AMOVQ)
+		st0nil.From.Type = obj.TYPE_REG
+		st0nil.From.Reg = valReg
+		st0nil.To.Type = obj.TYPE_MEM
+		st0nil.To.Reg = x86.REG_R11
+
+		// .Ldone:
+		done := s.Prog(obj.ANOP)
+		jdone.To.SetTarget(done)
+
 	case ssa.OpAMD64LoweredPanicBoundsRR, ssa.OpAMD64LoweredPanicBoundsRC, ssa.OpAMD64LoweredPanicBoundsCR, ssa.OpAMD64LoweredPanicBoundsCC:
 		// Compute the constant we put in the PCData entry for this call.
 		code, signed := ssa.BoundsKind(v.AuxInt).Code()

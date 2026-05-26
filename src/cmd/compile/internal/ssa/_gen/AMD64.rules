@@ -530,6 +530,7 @@
 
 // Write barrier.
 (WB ...) => (LoweredWB ...)
+(WBNilFilter2 ...) => (LoweredWBNilFilter2 ...)
 
 (PanicBounds ...) => (LoweredPanicBoundsRR ...)
 (LoweredPanicBoundsRR [kind] x (MOVQconst [c]) mem) => (LoweredPanicBoundsRC [kind] x {PanicBoundsC{C:c}} mem)

@@ -1914,6 +1914,67 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// AuxInt encodes how many buffer entries we need.
 		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
 
+	case ssa.OpPPC64LoweredWBNilFilter2:
+		// Nil-filtered write barrier: check if oldVal (arg1) is nil.
+		// If non-nil: gcWriteBarrier2, store val+oldVal.
+		// If nil: gcWriteBarrier1, store val only.
+		valReg := v.Args[0].Reg()
+		oldValReg := v.Args[1].Reg()
+
+		// CMP oldVal, R0 (R0 is always zero on ppc64)
+		cmp := s.Prog(ppc64.ACMP)
+		cmp.From.Type = obj.TYPE_REG
+		cmp.From.Reg = oldValReg
+		cmp.To.Type = obj.TYPE_REG
+		cmp.To.Reg = ppc64.REG_R0
+
+		// BEQ .Lnil
+		bnil := s.Prog(ppc64.ABEQ)
+		bnil.To.Type = obj.TYPE_BRANCH
+
+		// CALL gcWriteBarrier2
+		call2 := s.Prog(obj.ACALL)
+		call2.To.Type = obj.TYPE_MEM
+		call2.To.Name = obj.NAME_EXTERN
+		call2.To.Sym = ir.Syms.GCWriteBarrier[1] // gcWriteBarrier2
+
+		// MOVD val, 0(R29)
+		st0 := s.Prog(ppc64.AMOVD)
+		st0.From.Type = obj.TYPE_REG
+		st0.From.Reg = valReg
+		st0.To.Type = obj.TYPE_MEM
+		st0.To.Reg = ppc64.REG_R29
+
+		// MOVD oldVal, 8(R29)
+		st1 := s.Prog(ppc64.AMOVD)
+		st1.From.Type = obj.TYPE_REG
+		st1.From.Reg = oldValReg
+		st1.To.Type = obj.TYPE_MEM
+		st1.To.Reg = ppc64.REG_R29
+		st1.To.Offset = 8
+
+		// BR .Ldone
+		brdone := s.Prog(ppc64.ABR)
+		brdone.To.Type = obj.TYPE_BRANCH
+
+		// .Lnil: CALL gcWriteBarrier1
+		call1 := s.Prog(obj.ACALL)
+		call1.To.Type = obj.TYPE_MEM
+		call1.To.Name = obj.NAME_EXTERN
+		call1.To.Sym = ir.Syms.GCWriteBarrier[0] // gcWriteBarrier1
+		bnil.To.SetTarget(call1)
+
+		// MOVD val, 0(R29)
+		st0nil := s.Prog(ppc64.AMOVD)
+		st0nil.From.Type = obj.TYPE_REG
+		st0nil.From.Reg = valReg
+		st0nil.To.Type = obj.TYPE_MEM
+		st0nil.To.Reg = ppc64.REG_R29
+
+		// .Ldone:
+		done := s.Prog(obj.ANOP)
+		brdone.To.SetTarget(done)
+
 	case ssa.OpPPC64LoweredPanicBoundsRR, ssa.OpPPC64LoweredPanicBoundsRC, ssa.OpPPC64LoweredPanicBoundsCR, ssa.OpPPC64LoweredPanicBoundsCC:
 		// Compute the constant we put in the PCData entry for this call.
 		code, signed := ssa.BoundsKind(v.AuxInt).Code()
