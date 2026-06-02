@@ -1921,12 +1921,12 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		valReg := v.Args[0].Reg()
 		oldValReg := v.Args[1].Reg()
 
-		// CMP oldVal, R0 (R0 is always zero on ppc64)
+		// CMP oldVal, $0
 		cmp := s.Prog(ppc64.ACMP)
 		cmp.From.Type = obj.TYPE_REG
 		cmp.From.Reg = oldValReg
-		cmp.To.Type = obj.TYPE_REG
-		cmp.To.Reg = ppc64.REG_R0
+		cmp.To.Type = obj.TYPE_CONST
+		cmp.To.Offset = 0
 
 		// BEQ .Lnil
 		bnil := s.Prog(ppc64.ABEQ)
