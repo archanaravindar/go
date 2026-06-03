@@ -431,14 +431,14 @@ func writebarrier(f *Func) {
 				return
 			}*/
 			// Nil-filtered WB for exactly 1 entries (val from a
-                        // single store): check if val is nil at runtime and call
-                        // gcWriteBarrier1 if non nil
-                        if len(writes) == 1 && wbNilFilterSupported() {
-                                val := writes[0].ptr
-                                memThen = bThen.NewValue2(writes[0].pos, OpWBNilFilter1, types.TypeMem, val, memThen)
-                                writes = writes[:0]
-                                return
-                        }
+			// single store): check if val is nil at runtime and call
+			// gcWriteBarrier1 if non nil
+			if len(writes) == 1 && wbNilFilterSupported() {
+				val := writes[0].ptr
+				memThen = bThen.NewValue2(writes[0].pos, OpWBNilFilter1, types.TypeMem, val, memThen)
+				writes = writes[:0]
+				return
+			}
 
 			// Issue a call to get a write barrier buffer.
 			t := types.NewTuple(types.Types[types.TUINTPTR].PtrTo(), types.TypeMem)
