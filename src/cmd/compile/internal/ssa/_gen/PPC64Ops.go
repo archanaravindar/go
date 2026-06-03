@@ -713,7 +713,7 @@ func init() {
 			// gcWriteBarrier clobbers all other caller-saved registers, so val and oldVal
 			// must survive the internal CALL to still be readable for the buffer stores.
 			inputs:   []regMask{buildReg("R3 R4 R5 R6 R7 R8 R9 R10 R14 R15 R16 R17 R20 R21"), buildReg("R3 R4 R5 R6 R7 R8 R9 R10 R14 R15 R16 R17 R20 R21")},
-			clobbers: (callerSave &^ buildReg("R0 R3 R4 R5 R6 R7 R8 R9 R10 R14 R15 R16 R17 R20 R21 g")) | buildReg("R31") | buildReg("R29"),
+			clobbers: callerSave.minus(buildReg("R0 R3 R4 R5 R6 R7 R8 R9 R10 R14 R15 R16 R17 R20 R21 g")).union(buildReg("R31")).union(buildReg("R29")),
 		}, clobberFlags: true},
 */
                 // LoweredWBNilFilter1: nil-filtered write barrier for 1 entry.
@@ -726,7 +726,7 @@ func init() {
                         // gcWriteBarrier clobbers all other caller-saved registers, so val and oldVal
                         // must survive the internal CALL to still be readable for the buffer stores.
                         inputs:   []regMask{buildReg("R3 R4 R5 R6 R7 R8 R9 R10 R14 R15 R16 R17 R20 R21")},
-                        clobbers: (callerSave &^ buildReg("R0 R3 R4 R5 R6 R7 R8 R9 R10 R14 R15 R16 R17 R20 R21 g")) | buildReg("R31") | buildReg("R29"),
+                        clobbers: callerSave.minus(buildReg("R0 R3 R4 R5 R6 R7 R8 R9 R10 R14 R15 R16 R17 R20 R21 g")).union(buildReg("R31")).union(buildReg("R29")),
                 }, clobberFlags: true},
 
 		{name: "LoweredPubBarrier", argLength: 1, asm: "LWSYNC", hasSideEffects: true}, // Do data barrier. arg0=memory
