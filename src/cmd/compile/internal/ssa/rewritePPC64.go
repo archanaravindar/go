@@ -856,8 +856,8 @@ func rewriteValuePPC64(v *Value) bool {
 	case OpWB:
 		v.Op = OpPPC64LoweredWB
 		return true
-	case OpWBNilFilter2:
-		v.Op = OpPPC64LoweredWBNilFilter2
+	case OpWBNilFilter1:
+		v.Op = OpPPC64LoweredWBNilFilter1
 		return true
 	case OpXor16:
 		v.Op = OpPPC64XOR

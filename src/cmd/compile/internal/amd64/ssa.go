@@ -1381,7 +1381,41 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// AuxInt encodes how many buffer entries we need.
 		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
 
-	case ssa.OpAMD64LoweredWBNilFilter2:
+	case ssa.OpAMD64LoweredWBNilFilter1:
+		// Nil-filtered write barrier: check if Val (arg0) is nil.
+		// If non-nil: gcWriteBarrier1, store val+oldVal.
+		// If nil: store val only.
+		valReg := v.Args[0].Reg()
+
+		// TESTQ oldVal, oldVal
+		test := s.Prog(x86.ATESTQ)
+		test.From.Type = obj.TYPE_REG
+		test.From.Reg = valReg
+		test.To.Type = obj.TYPE_REG
+		test.To.Reg = valReg
+
+		// JEQ .Lnil
+		jnil := s.Prog(x86.AJEQ)
+		jnil.To.Type = obj.TYPE_BRANCH
+
+		// CALL gcWriteBarrier1
+		call2 := s.Prog(obj.ACALL)
+		call2.To.Type = obj.TYPE_MEM
+		call2.To.Name = obj.NAME_EXTERN
+		call2.To.Sym = ir.Syms.GCWriteBarrier[0] // gcWriteBarrier1
+
+		// MOVQ val, 0(R11)
+		st0 := s.Prog(x86.AMOVQ)
+		st0.From.Type = obj.TYPE_REG
+		st0.From.Reg = valReg
+		st0.To.Type = obj.TYPE_MEM
+		st0.To.Reg = x86.REG_R11
+
+		// .Ldone:
+		done := s.Prog(obj.ANOP)
+		jnil.To.SetTarget(done)
+
+	/*case ssa.OpAMD64LoweredWBNilFilter2:
 		// Nil-filtered write barrier: check if oldVal (arg1) is nil.
 		// If non-nil: gcWriteBarrier2, store val+oldVal.
 		// If nil: gcWriteBarrier1, store val only.
@@ -1441,7 +1475,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// .Ldone:
 		done := s.Prog(obj.ANOP)
 		jdone.To.SetTarget(done)
-
+*/
 	case ssa.OpAMD64LoweredPanicBoundsRR, ssa.OpAMD64LoweredPanicBoundsRC, ssa.OpAMD64LoweredPanicBoundsCR, ssa.OpAMD64LoweredPanicBoundsCC:
 		// Compute the constant we put in the PCData entry for this call.
 		code, signed := ssa.BoundsKind(v.AuxInt).Code()

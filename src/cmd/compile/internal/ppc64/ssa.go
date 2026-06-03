@@ -1907,6 +1907,39 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			q.To.Reg = ppc64.REG_R2
 		}
 
+	case ssa.OpPPC64LoweredWBNilFilter1:
+		// Nil-filtered write barrier: check if Val (arg0) is nil.
+		// If non-nil: gcWriteBarrier1, store val.
+		// If nil: store val only.
+		valReg := v.Args[0].Reg()
+
+		// CMP oldVal, $0
+		cmp := s.Prog(ppc64.ACMP)
+		cmp.From.Type = obj.TYPE_REG
+		cmp.From.Reg = valReg
+		cmp.To.Type = obj.TYPE_CONST
+		cmp.To.Offset = 0
+
+		// BEQ .Lnil
+		bnil := s.Prog(ppc64.ABEQ)
+		bnil.To.Type = obj.TYPE_BRANCH
+
+		// CALL gcWriteBarrier1
+		call2 := s.Prog(obj.ACALL)
+		call2.To.Type = obj.TYPE_MEM
+		call2.To.Name = obj.NAME_EXTERN
+		call2.To.Sym = ir.Syms.GCWriteBarrier[0] // gcWriteBarrier1
+
+		// MOVD val, 0(R29)
+		st0 := s.Prog(ppc64.AMOVD)
+		st0.From.Type = obj.TYPE_REG
+		st0.From.Reg = valReg
+		st0.To.Type = obj.TYPE_MEM
+		st0.To.Reg = ppc64.REG_R29
+
+		// .Ldone:
+		done := s.Prog(obj.ANOP)
+		bnil.To.SetTarget(done)
 	case ssa.OpPPC64LoweredWB:
 		p := s.Prog(obj.ACALL)
 		p.To.Type = obj.TYPE_MEM
@@ -1914,11 +1947,11 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// AuxInt encodes how many buffer entries we need.
 		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
 
-	case ssa.OpPPC64LoweredWBNilFilter2:
+//	case ssa.OpPPC64LoweredWBNilFilter2:
 		// Nil-filtered write barrier: check if oldVal (arg1) is nil.
 		// If non-nil: gcWriteBarrier2, store val+oldVal.
 		// If nil: gcWriteBarrier1, store val only.
-		valReg := v.Args[0].Reg()
+/*		valReg := v.Args[0].Reg()
 		oldValReg := v.Args[1].Reg()
 
 		// CMP oldVal, $0
@@ -1974,7 +2007,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// .Ldone:
 		done := s.Prog(obj.ANOP)
 		brdone.To.SetTarget(done)
-
+*/
 	case ssa.OpPPC64LoweredPanicBoundsRR, ssa.OpPPC64LoweredPanicBoundsRC, ssa.OpPPC64LoweredPanicBoundsCR, ssa.OpPPC64LoweredPanicBoundsCC:
 		// Compute the constant we put in the PCData entry for this call.
 		code, signed := ssa.BoundsKind(v.AuxInt).Code()

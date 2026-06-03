@@ -420,7 +420,13 @@ var genericOps = []opData{
 	// gcWriteBarrier2 and records both arg0 (val) and arg1 (oldVal)
 	// in the buffer. If nil, calls gcWriteBarrier1 and records only
 	// arg0 (val). arg0=val, arg1=oldVal, arg2=mem. Returns mem.
-	{name: "WBNilFilter2", argLength: 3, typ: "Mem"},
+	//{name: "WBNilFilter2", argLength: 3, typ: "Mem"},
+        // WBNilFilter1 is a nil-filtered write barrier for 1 entry
+        // It checks if arg0 (val) is nil at runtime. If non-nil, calls
+        // gcWriteBarrier1 and records arg0 (val) in the buffer.
+        // If nil, skips the barrier entirely. Returns mem.
+        {name: "WBNilFilter1", argLength: 2, typ: "Mem"},
+
 
 	{name: "HasCPUFeature", argLength: 0, typ: "bool", aux: "Sym", symEffect: "None"}, // aux=place that this feature flag can be loaded from
 

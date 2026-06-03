@@ -1074,7 +1074,7 @@ const (
 	OpAMD64LoweredGetCallerSP
 	OpAMD64LoweredNilCheck
 	OpAMD64LoweredWB
-	OpAMD64LoweredWBNilFilter2
+	OpAMD64LoweredWBNilFilter1
 	OpAMD64LoweredHasCPUFeature
 	OpAMD64LoweredPanicBoundsRR
 	OpAMD64LoweredPanicBoundsRC
@@ -5999,7 +5999,7 @@ const (
 	OpPPC64LoweredAtomicOr8
 	OpPPC64LoweredAtomicOr32
 	OpPPC64LoweredWB
-	OpPPC64LoweredWBNilFilter2
+	OpPPC64LoweredWBNilFilter1
 	OpPPC64LoweredPubBarrier
 	OpPPC64LoweredPanicBoundsRR
 	OpPPC64LoweredPanicBoundsRC
@@ -7011,7 +7011,7 @@ const (
 	OpZeroWB
 	OpWBend
 	OpWB
-	OpWBNilFilter2
+	OpWBNilFilter1
 	OpHasCPUFeature
 	OpPanicBounds
 	OpPanicExtend
@@ -19842,13 +19842,12 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
-		name:         "LoweredWBNilFilter2",
-		argLen:       3,
+		name:         "LoweredWBNilFilter1",
+		argLen:       2,
 		clobberFlags: true,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{0, 47087}, // AX CX DX BX BP SI DI R8 R9 R10 R12 R13 R15
-				{1, 47087}, // AX CX DX BX BP SI DI R8 R9 R10 R12 R13 R15
 			},
 			clobbers: 2147420160, // R11 X0 X1 X2 X3 X4 X5 X6 X7 X8 X9 X10 X11 X12 X13 X14
 		},
@@ -93864,13 +93863,12 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
-		name:         "LoweredWBNilFilter2",
-		argLen:       3,
+		name:         "LoweredWBNilFilter1",
+		argLen:       2,
 		clobberFlags: true,
 		reg: regInfo{
 			inputs: []inputInfo{
-				{0, 536862712}, // R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28
-				{1, 536862712}, // R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28
+				{0, 3393528}, // R3 R4 R5 R6 R7 R8 R9 R10 R14 R15 R16 R17 R20 R21
 			},
 			clobbers: 18446744072632408064, // R11 R12 R18 R19 R22 R23 R24 R25 R26 R27 R28 R29 R31 F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 XER
 		},
@@ -106140,8 +106138,8 @@ var opcodeTable = [...]opInfo{
 		generic: true,
 	},
 	{
-		name:    "WBNilFilter2",
-		argLen:  3,
+		name:    "WBNilFilter1",
+		argLen:  2,
 		generic: true,
 	},
 	{

@@ -563,7 +563,8 @@
 
 // Write barrier.
 (WB ...) => (LoweredWB ...)
-(WBNilFilter2 ...) => (LoweredWBNilFilter2 ...)
+//(WBNilFilter2 ...) => (LoweredWBNilFilter2 ...)
+(WBNilFilter1 ...) => (LoweredWBNilFilter1 ...)
 
 // Publication barrier as intrinsic
 (PubBarrier ...) => (LoweredPubBarrier ...)

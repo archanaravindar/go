@@ -423,13 +423,23 @@ func writebarrier(f *Func) {
 			// Nil-filtered WB for exactly 2 entries (val + oldVal from a
 			// single store): check if oldVal is nil at runtime and call
 			// gcWriteBarrier1 instead of gcWriteBarrier2 when it is.
-			if len(writes) == 2 && wbNilFilterSupported() {
+			/*if len(writes) == 2 && wbNilFilterSupported() {
 				val := writes[0].ptr
 				oldVal := writes[1].ptr
 				memThen = bThen.NewValue3(writes[0].pos, OpWBNilFilter2, types.TypeMem, val, oldVal, memThen)
 				writes = writes[:0]
 				return
-			}
+			}*/
+			// Nil-filtered WB for exactly 1 entries (val from a
+                        // single store): check if val is nil at runtime and call
+                        // gcWriteBarrier1 if non nil
+                        if len(writes) == 1 && wbNilFilterSupported() {
+                                val := writes[0].ptr
+                                memThen = bThen.NewValue2(writes[0].pos, OpWBNilFilter1, types.TypeMem, val, memThen)
+                                writes = writes[:0]
+                                return
+                        }
+
 			// Issue a call to get a write barrier buffer.
 			t := types.NewTuple(types.Types[types.TUINTPTR].PtrTo(), types.TypeMem)
 			call := bThen.NewValue1I(pos, OpWB, t, int64(len(writes)), memThen)
