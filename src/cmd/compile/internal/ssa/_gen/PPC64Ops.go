@@ -709,8 +709,8 @@ func init() {
 		// and stores only arg0. arg0=val, arg1=oldVal, arg2=mem. Returns mem.
 		// R29 is used internally for the buffer pointer.
 		{name: "LoweredWBNilFilter2", argLength: 3, reg: regInfo{
-			inputs:   []regMask{gp &^ buildReg("R29"), gp &^ buildReg("R29")},
-			clobbers: (callerSave &^ buildReg("R0 R3 R4 R5 R6 R7 R8 R9 R10 R14 R15 R16 R17 R20 R21 g")) | buildReg("R31") | buildReg("R29"),
+			inputs:   []regMask{gp.minus(buildReg("R29")), gp.minus(buildReg("R29"))},
+			clobbers: callerSave.minus(buildReg("R0 R3 R4 R5 R6 R7 R8 R9 R10 R14 R15 R16 R17 R20 R21 g")).union(buildReg("R31")).union(buildReg("R29")),
 		}, clobberFlags: true},
 
 		{name: "LoweredPubBarrier", argLength: 1, asm: "LWSYNC", hasSideEffects: true}, // Do data barrier. arg0=memory

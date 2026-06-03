@@ -1131,8 +1131,8 @@ func init() {
 		// gcWriteBarrier1 and stores only arg0 (val). arg0=val, arg1=oldVal, arg2=mem.
 		// Returns mem. R11 is used internally for the buffer pointer.
 		{name: "LoweredWBNilFilter2", argLength: 3, reg: regInfo{
-			inputs:   []regMask{gp &^ buildReg("R11"), gp &^ buildReg("R11")},
-			clobbers: (callerSave &^ (gp | g)) | buildReg("R11"),
+			inputs:   []regMask{gp.minus(buildReg("R11")), gp.minus(buildReg("R11"))},
+			clobbers: callerSave.minus(gp.union(g)).union(buildReg("R11")),
 		}, clobberFlags: true},
 
 		{name: "LoweredHasCPUFeature", argLength: 0, reg: gp01, rematerializeable: true, typ: "UInt64", aux: "Sym", symEffect: "None"},
