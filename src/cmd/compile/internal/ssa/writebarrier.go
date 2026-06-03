@@ -449,40 +449,38 @@ func writebarrier(f *Func) {
 			}
 		}
 
-		{
-			// Find all the pointers we need to write to the buffer.
-			for _, w := range stores {
-				if w.Op != OpStoreWB {
-					continue
-				}
-				pos := w.Pos
-				ptr := w.Args[0]
-				val := w.Args[1]
-				if !srcs.contains(val.ID) && needWBsrc(val) {
-					srcs.add(val.ID)
-					addEntry(pos, val)
-				}
-				if !dsts.contains(ptr.ID) && needWBdst(ptr, w.Args[2], zeroes) {
-					dsts.add(ptr.ID)
-					// Load old value from store target.
-					// Note: This turns bad pointer writes into bad
-					// pointer reads, which could be confusing. We could avoid
-					// reading from obviously bad pointers, which would
-					// take care of the vast majority of these. We could
-					// patch this up in the signal handler, or use XCHG to
-					// combine the read and the write.
-					if ptr == nilcheck {
-						ptr = nilcheckThen
-					}
-					oldVal := bThen.NewValue2(pos, OpLoad, types.Types[types.TUINTPTR], ptr, memThen)
-					// Save old value to write buffer.
-					addEntry(pos, oldVal)
-				}
-				f.fe.Func().SetWBPos(pos)
-				nWBops--
+		// Find all the pointers we need to write to the buffer.
+		for _, w := range stores {
+			if w.Op != OpStoreWB {
+				continue
 			}
-			flush()
+			pos := w.Pos
+			ptr := w.Args[0]
+			val := w.Args[1]
+			if !srcs.contains(val.ID) && needWBsrc(val) {
+				srcs.add(val.ID)
+				addEntry(pos, val)
+			}
+			if !dsts.contains(ptr.ID) && needWBdst(ptr, w.Args[2], zeroes) {
+				dsts.add(ptr.ID)
+				// Load old value from store target.
+				// Note: This turns bad pointer writes into bad
+				// pointer reads, which could be confusing. We could avoid
+				// reading from obviously bad pointers, which would
+				// take care of the vast majority of these. We could
+				// patch this up in the signal handler, or use XCHG to
+				// combine the read and the write.
+				if ptr == nilcheck {
+					ptr = nilcheckThen
+				}
+				oldVal := bThen.NewValue2(pos, OpLoad, types.Types[types.TUINTPTR], ptr, memThen)
+				// Save old value to write buffer.
+				addEntry(pos, oldVal)
+			}
+			f.fe.Func().SetWBPos(pos)
+			nWBops--
 		}
+		flush()
 
 		// Now do the rare cases, Zeros and Moves.
 		for _, w := range stores {
