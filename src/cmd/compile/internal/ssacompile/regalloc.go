@@ -1171,10 +1171,96 @@ func (s *regAllocState) regalloc(f *ssa.Func) {
 				m := s.values[a.ID].Regs.Minus(phiUsed).Intersect(s.allocatable)
 				if !m.Empty() {
 					r := s.pickReg(m)
+					/*
+						if s.f.Pass.Debug > ssa.RegDebug {
+							fmt.Printf("phi %s: input %s from pred %s -> %s (avail: %s)\n",
+								v, a, p, &s.registers[r], s.RegMaskString(m))
+						}*/
 					phiUsed = phiUsed.AddReg(r)
 					phiRegs = append(phiRegs, r)
 				} else {
+					/*
+						if s.f.Pass.Debug > ssa.RegDebug {
+							fmt.Printf("phi %s: input %s from pred %s -> NONE (all regs for %s taken by prior phis)\n",
+								v, a, p, a)
+						}
+					*/
 					phiRegs = append(phiRegs, noRegister)
+				}
+			}
+
+			// Contention resolution: when multiple phis wanted the same
+			// register from the primary predecessor (because their inputs
+			// are the same SSA value), the first-come-first-served order
+			// above may have given the register to the wrong phi. Consult
+			// other predecessors to break the tie: the phi whose non-primary
+			// input is already in the contested register has the stronger
+			// claim, because matching it avoids a shuffle on that edge.
+			// Votes are weighted by loop membership — a predecessor inside
+			// the current block's loop is on a back-edge that executes every
+			// iteration, so avoiding a shuffle there matters more than on a
+			// one-time entry edge.
+			var curLoop *ssa.Loop
+			if l := s.loopnest.B2L[b.ID]; l != nil {
+				curLoop = l
+			}
+			for i := range phis {
+				if phiRegs[i] != noRegister || !s.values[phis[i].ID].NeedReg {
+					continue
+				}
+				// This phi got noRegister. Find which register(s) its
+				// primary-predecessor input occupied that were taken by
+				// an earlier phi.
+				ai := phis[i].Args[idx]
+				contested := s.values[ai.ID].Regs.Intersect(phiUsed).Intersect(s.allocatable)
+				if contested.Empty() {
+					continue
+				}
+				// Check each earlier phi that might hold a contested register.
+				for j := 0; j < i; j++ {
+					r := phiRegs[j]
+					if r == noRegister || !contested.HasReg(r) {
+						continue
+					}
+					// Phi j holds register r; phi i wanted it.
+					// Count weighted votes from non-primary predecessors.
+					// Predecessors inside the same loop get weight 10 (hot
+					// back-edges), others get weight 1 (one-time entry).
+					iVotes := 0
+					jVotes := 0
+					for pidx, pe := range b.Preds {
+						if pidx == idx {
+							continue
+						}
+						weight := 1
+						if curLoop != nil && s.loopnest.B2L[pe.B.ID] == curLoop {
+							weight = 10
+						}
+						for _, er := range s.endRegs[pe.B.ID] {
+							if er.r == r {
+								if er.v == s.orig[phis[i].Args[pidx].ID] {
+									iVotes += weight
+								}
+								if er.v == s.orig[phis[j].Args[pidx].ID] {
+									jVotes += weight
+								}
+								break
+							}
+						}
+					}
+					if iVotes > jVotes {
+						altMask := s.compatRegs(phis[j].Type).Minus(phiUsed).Minus(s.used).Minus(ssa.RegMaskAt(r))
+						if altMask.Empty() {
+							continue // don't cause eviction of j to a stack slot
+						}
+						phiRegs[i] = r
+						phiRegs[j] = noRegister
+						if s.f.Pass.Debug > ssa.RegDebug {
+							fmt.Printf("phi swap: %s gets %s (votes %d>%d), %s deferred\n",
+								phis[i], &s.registers[r], iVotes, jVotes, phis[j])
+						}
+						break
+					}
 				}
 			}
 
