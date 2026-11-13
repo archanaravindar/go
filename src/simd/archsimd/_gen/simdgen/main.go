@@ -208,6 +208,10 @@ func main() {
 		if err != nil {
 			log.Fatalf("loading ARM64 SVE instructions: %s", err)
 		}
+	case "ppc64":
+		// ppc64 has no ISA importer. All instruction definitions come from
+		// the go_ppc64.yaml inputs, which unify directly with types.yaml.
+
 	default:
 		log.Fatalf("-arch must be one of: amd64, arm64, sve")
 	}
@@ -237,7 +241,7 @@ func main() {
 		inputs = append(inputs, defs)
 
 		base := filepath.Base(path)
-		if base == "go_amd64.yaml" || base == "go_arm64.yaml" || base == "go_sve.yaml" {
+		if base == "go_amd64.yaml" || base == "go_arm64.yaml" || base == "go_sve.yaml" || base == "go_ppc64.yaml" 		  {
 			// These must all be used in the final result
 			for def := range defs.Summands() {
 				must[def] = struct{}{}

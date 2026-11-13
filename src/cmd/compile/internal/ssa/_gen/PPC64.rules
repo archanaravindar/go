@@ -458,6 +458,11 @@
 (Load <t> ptr mem) && ssa.Is32BitFloat(t) => (FMOVSload ptr mem)
 (Load <t> ptr mem) && ssa.Is64BitFloat(t) => (FMOVDload ptr mem)
 
+// 128-bit SIMD vector load/store. POWER9+ has the single-instruction D-form
+// (LXV/STXV);
+(Load <t> ptr mem) && t.Size() == 16 && buildcfg.GOPPC64 >= 9 => (LXVload ptr mem)
+(Store {t} ptr val mem) && t.Size() == 16 && buildcfg.GOPPC64 >= 9 => (STXVstore ptr val mem)
+
 (Store {t} ptr val mem) && t.Size() == 8 &&  t.IsFloat() => (FMOVDstore ptr val mem)
 (Store {t} ptr val mem) && t.Size() == 4 &&  t.IsFloat() => (FMOVSstore ptr val mem)
 (Store {t} ptr val mem) && t.Size() == 8 && !t.IsFloat() => (MOVDstore ptr val mem)

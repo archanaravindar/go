@@ -59,6 +59,19 @@ func simdReg(r int16) int16 {
 	return r
 }
 
+// simdV21 emits a VMX/VSX instruction with two vector sources and one vector
+// destination, e.g. VADDUWM VB, VA, VT (VT = VA + VB). The second source goes
+// in the Reg field, matching ppc64's native 3-register form.
+func simdV21(s *ssagen.State, v *ssa.Value) *obj.Prog {
+	p := s.Prog(v.Op.Asm())
+	p.From.Type = obj.TYPE_REG
+	p.From.Reg = simdReg(v.Args[1].Reg())
+	p.Reg = simdReg(v.Args[0].Reg())
+	p.To.Type = obj.TYPE_REG
+	p.To.Reg = simdReg(v.Reg())
+	return p
+}
+
 // loadByType returns the load instruction of the given type.
 func loadByType(t *types.Type) obj.As {
 	if t.IsSIMD() {
@@ -523,8 +536,14 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			// Pass the spill/unspill information along to the assembler, offset by size of
 			// the saved LR slot.
 			addr := ssagen.SpillSlotAddr(a, ppc64.REGSP, base.Ctxt.Arch.FixedFrameSize)
+			reg := a.Reg
+			if a.Type.IsSIMD() {
+				// SIMD args land in the F0-F31 bank but spill/unspill via
+				// STXV/LXV, which require the VSX register name (see simdReg).
+				reg = simdReg(reg)
+			}
 			s.FuncInfo().AddSpill(
-				obj.RegSpill{Reg: a.Reg, Addr: addr, Unspill: loadByType(a.Type), Spill: storeByType(a.Type)})
+				obj.RegSpill{Reg: reg, Addr: addr, Unspill: loadByType(a.Type), Spill: storeByType(a.Type)})
 		}
 		v.Block.Func.RegArgs = nil
 
@@ -1081,6 +1100,24 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = r
 		p.Reg = r
+
+	case ssaop.OpPPC64LXVload:
+		// POWER9+ D-form load: LXV 0(Rbase), VT.
+		p := s.Prog(ppc64.ALXV)
+		p.From.Type = obj.TYPE_MEM
+		p.From.Reg = v.Args[0].Reg()
+		p.From.Offset = 0
+		p.To.Type = obj.TYPE_REG
+		p.To.Reg = simdReg(v.Reg())
+
+	case ssaop.OpPPC64STXVstore:
+		// POWER9+ D-form store: STXV VS, 0(Rbase).
+		p := s.Prog(ppc64.ASTXV)
+		p.From.Type = obj.TYPE_REG
+		p.From.Reg = simdReg(v.Args[1].Reg())
+		p.To.Type = obj.TYPE_MEM
+		p.To.Reg = v.Args[0].Reg()
+		p.To.Offset = 0
 
 	case ssaop.OpPPC64LoweredQuadZero, ssaop.OpPPC64LoweredQuadZeroShort:
 		// The LoweredQuad code generation
@@ -2095,7 +2132,10 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 	case ssaop.OpClobber, ssaop.OpClobberReg:
 		// TODO: implement for clobberdead experiment. Nop is ok for now.
 	default:
-		v.Fatalf("genValue not implemented: %s", v.LongString())
+		if !ssaGenSIMDValue(s, v) {
+			v.Fatalf("genValue not implemented: %s", v.LongString())
+		}
+
 	}
 }
 

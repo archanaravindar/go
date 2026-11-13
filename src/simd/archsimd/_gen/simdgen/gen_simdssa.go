@@ -24,7 +24,9 @@ import (
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssagen"
 	"cmd/internal/obj"
+{{- if or (eq .Arch "amd64") (eq .Arch "arm64")}}
 	"cmd/internal/obj/{{.ObjArch}}"
+{{- end}}
 	"cmd/compile/internal/ssa/ssaop"
 )
 

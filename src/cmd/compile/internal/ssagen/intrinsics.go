@@ -1746,6 +1746,9 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 		// Only enable intrinsics, if SIMD experiment.
 		simdAMD64Intrinsics(addF)
 		simdARM64Intrinsics(addF)
+		if cfg.goppc64 >= 9 {
+			simdPPC64Intrinsics(addF)
+		}
 		initWasmSIMD()
 		simdARM64SVEIntrinsics(addF)
 		// Hand-written SVE infra intrinsic (not generated from a type op): vl

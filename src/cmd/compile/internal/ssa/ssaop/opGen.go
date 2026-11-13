@@ -6143,6 +6143,8 @@ const (
 	OpPPC64CALLclosure
 	OpPPC64CALLinter
 	OpPPC64Zero128
+	OpPPC64LXVload
+	OpPPC64STXVstore
 	OpPPC64LoweredZero
 	OpPPC64LoweredZeroShort
 	OpPPC64LoweredQuadZeroShort
@@ -6179,6 +6181,7 @@ const (
 	OpPPC64FlagEQ
 	OpPPC64FlagLT
 	OpPPC64FlagGT
+	OpPPC64VADDUWM128
 
 	OpRISCV64ADD
 	OpRISCV64ADDI
@@ -102566,6 +102569,32 @@ var OpcodeTable = [...]OpInfo{
 		},
 	},
 	{
+		Name:           "LXVload",
+		ArgLen:         2,
+		FaultOnNilArg0: true,
+		asm:            ppc64.ALXV,
+		Reg: RegInfo{
+			Inputs: []InputInfo{
+				{0, RegMask{V1: 1073733630, V2: 0}}, // SP SB R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
+			},
+			Outputs: []OutputInfo{
+				{0, RegMask{V1: 0, V2: 4294967295}}, // V0 V1 V2 V3 V4 V5 V6 V7 V8 V9 V10 V11 V12 V13 V14 V15 V16 V17 V18 V19 V20 V21 V22 V23 V24 V25 V26 V27 V28 V29 V30 V31
+			},
+		},
+	},
+	{
+		Name:           "STXVstore",
+		ArgLen:         3,
+		FaultOnNilArg0: true,
+		asm:            ppc64.ASTXV,
+		Reg: RegInfo{
+			Inputs: []InputInfo{
+				{0, RegMask{V1: 1073733630, V2: 0}}, // SP SB R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
+				{1, RegMask{V1: 0, V2: 4294967295}}, // V0 V1 V2 V3 V4 V5 V6 V7 V8 V9 V10 V11 V12 V13 V14 V15 V16 V17 V18 V19 V20 V21 V22 V23 V24 V25 V26 V27 V28 V29 V30 V31
+			},
+		},
+	},
+	{
 		Name:           "LoweredZero",
 		AuxType:        AuxTypeInt64,
 		ArgLen:         2,
@@ -103046,6 +103075,21 @@ var OpcodeTable = [...]OpInfo{
 		Name:   "FlagGT",
 		ArgLen: 0,
 		Reg:    RegInfo{},
+	},
+	{
+		Name:        "VADDUWM128",
+		ArgLen:      2,
+		Commutative: true,
+		asm:         ppc64.AVADDUWM,
+		Reg: RegInfo{
+			Inputs: []InputInfo{
+				{0, RegMask{V1: 0, V2: 4294967295}}, // V0 V1 V2 V3 V4 V5 V6 V7 V8 V9 V10 V11 V12 V13 V14 V15 V16 V17 V18 V19 V20 V21 V22 V23 V24 V25 V26 V27 V28 V29 V30 V31
+				{1, RegMask{V1: 0, V2: 4294967295}}, // V0 V1 V2 V3 V4 V5 V6 V7 V8 V9 V10 V11 V12 V13 V14 V15 V16 V17 V18 V19 V20 V21 V22 V23 V24 V25 V26 V27 V28 V29 V30 V31
+			},
+			Outputs: []OutputInfo{
+				{0, RegMask{V1: 0, V2: 4294967295}}, // V0 V1 V2 V3 V4 V5 V6 V7 V8 V9 V10 V11 V12 V13 V14 V15 V16 V17 V18 V19 V20 V21 V22 V23 V24 V25 V26 V27 V28 V29 V30 V31
+			},
+		},
 	},
 
 	{

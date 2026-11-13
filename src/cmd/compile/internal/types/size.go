@@ -482,6 +482,9 @@ func CalcSize(t *Type) {
 // by the compiler except for the space that they reserve.
 func simdify(st *Type, isTag bool) {
 	st.align = 8
+	if buildcfg.GOARCH == "ppc64le" && buildcfg.GOPPC64 >= 9 {
+		st.align = 16
+	}
 	st.alg = ANOALG // not comparable with ==
 	st.intRegs = 0
 	st.flags |= typeIsSIMD
@@ -510,7 +513,8 @@ func CalcStructSize(t *Type) {
 		case sym.Name == "align128" && isAtomicStdPkg(sym.Pkg):
 			maxAlign = 16
 
-		case buildcfg.Experiment.SIMD && (sym.Pkg.Path == "simd/archsimd") && len(t.Fields()) >= 1:
+		case buildcfg.Experiment.SIMD && (sym.Pkg.Path == "simd/archsimd") && len(t.Fields()) >= 1 &&
+		 !((buildcfg.GOARCH == "ppc64le" || buildcfg.GOARCH == "ppc64") && buildcfg.GOPPC64 < 9):
 			// This gates the experiment -- without it, no user-visible types can be "simd".
 			// The SSA-visible SIMD types remain.
 			switch sym.Name {

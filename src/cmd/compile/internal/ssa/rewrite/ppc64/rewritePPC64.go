@@ -32,8 +32,14 @@ func RewriteValue(v *ssa.Value) bool {
 	case ssaop.OpAdd8:
 		v.Op = ssaop.OpPPC64ADD
 		return true
+	case ssaop.OpAddInt32x4:
+		v.Op = ssaop.OpPPC64VADDUWM128
+		return true
 	case ssaop.OpAddPtr:
 		v.Op = ssaop.OpPPC64ADD
+		return true
+	case ssaop.OpAddUint32x4:
+		v.Op = ssaop.OpPPC64VADDUWM128
 		return true
 	case ssaop.OpAddr:
 		return rewriteValue_OpAddr(v)
@@ -2680,6 +2686,20 @@ func rewriteValue_OpLoad(v *ssa.Value) bool {
 			break
 		}
 		v.Reset(ssaop.OpPPC64FMOVDload)
+		v.AddArg2(ptr, mem)
+		return true
+	}
+	// match: (Load <t> ptr mem)
+	// cond: t.Size() == 16 && buildcfg.GOPPC64 >= 9
+	// result: (LXVload ptr mem)
+	for {
+		t := v.Type
+		ptr := v_0
+		mem := v_1
+		if !(t.Size() == 16 && buildcfg.GOPPC64 >= 9) {
+			break
+		}
+		v.Reset(ssaop.OpPPC64LXVload)
 		v.AddArg2(ptr, mem)
 		return true
 	}
@@ -15251,6 +15271,21 @@ func rewriteValue_OpStore(v *ssa.Value) bool {
 	v_2 := v.Args[2]
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
+	// match: (Store {t} ptr val mem)
+	// cond: t.Size() == 16 && buildcfg.GOPPC64 >= 9
+	// result: (STXVstore ptr val mem)
+	for {
+		t := ssa.AuxToType(v.Aux)
+		ptr := v_0
+		val := v_1
+		mem := v_2
+		if !(t.Size() == 16 && buildcfg.GOPPC64 >= 9) {
+			break
+		}
+		v.Reset(ssaop.OpPPC64STXVstore)
+		v.AddArg3(ptr, val, mem)
+		return true
+	}
 	// match: (Store {t} ptr val mem)
 	// cond: t.Size() == 8 && t.IsFloat()
 	// result: (FMOVDstore ptr val mem)

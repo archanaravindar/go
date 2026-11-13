@@ -1,0 +1,28 @@
+!sum
+# Add: VADDUWM VT, VA, VB  (VT = VA + VB, modulo 2^32, per 32-bit lane)
+#
+# ppc64 has no ISA importer, so every operand attribute that would normally be
+# supplied by XED/ARM64 XML is given explicitly here. go+elemBits pin the type
+# (unifying against types.yaml), and asmPos matches the VMX operand order:
+# output VT=0, inputs VA=1, VB=2. Distinct positions => regShape "v21".
+- go: Add
+  asm: "VADDUWM"
+  goarch: ppc64
+  cpuFeature: VMX
+  inVariant: []
+  in:
+    - {class: vreg, go: Int32x4, base: int, elemBits: 32, bits: 128, lanes: 4, asmPos: 1}
+    - {class: vreg, go: Int32x4, base: int, elemBits: 32, bits: 128, lanes: 4, asmPos: 2}
+  out:
+    - {class: vreg, go: Int32x4, base: int, elemBits: 32, bits: 128, lanes: 4, asmPos: 0}
+
+- go: Add
+  asm: "VADDUWM"            # modular add is sign-agnostic — same op as Int32x4
+  goarch: ppc64
+  cpuFeature: VMX
+  inVariant: []
+  in:
+    - {class: vreg, go: Uint32x4, base: uint, elemBits: 32, bits: 128, lanes: 4, asmPos: 1}
+    - {class: vreg, go: Uint32x4, base: uint, elemBits: 32, bits: 128, lanes: 4, asmPos: 2}
+  out:
+    - {class: vreg, go: Uint32x4, base: uint, elemBits: 32, bits: 128, lanes: 4, asmPos: 0}

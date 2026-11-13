@@ -191,6 +191,9 @@ func simd{{GetSIMDTag}}Intrinsics(addF func(pkg, fn string, b intrinsicBuilder, 
 	var TypeDotMethodIntrinsicARM64 = templateOf(`addF(simdPackage, "{{.TypeDotMethod}}", func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value { return args[0] }, sys.ARM64)
 	`, "arm64 type dot method intrinsics")
 
+	var TypeDotMethodIntrinsicPPC64 = templateOf(`addF(simdPackage, "{{.TypeDotMethod}}", func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value { return args[0] }, sys.PPC64)
+	`, "ppc64 type dot method intrinsics")
+
 	for _, conv := range vConvertFromTypeMap(typeMap) {
 		// Old As intrinsic
 		from, to := &conv.Tsrc, &conv.Tdst
@@ -210,6 +213,8 @@ func simd{{GetSIMDTag}}Intrinsics(addF func(pkg, fn string, b intrinsicBuilder, 
 			typeDotMethodIntrinsic = TypeDotMethodIntrinsicAMD64
 		case "arm64":
 			typeDotMethodIntrinsic = TypeDotMethodIntrinsicARM64
+		case "ppc64":
+			typeDotMethodIntrinsic = TypeDotMethodIntrinsicPPC64
 		default:
 			panic(fmt.Errorf("unsupported arch %q for type dot method intrinsics", CurrentArch().Arch))
 		}

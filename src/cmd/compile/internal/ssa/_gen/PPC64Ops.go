@@ -211,6 +211,14 @@ func init() {
 		fploadidx   = regInfo{inputs: []regMask{gp.union(sp).union(sb), gp.union(sp).union(sb)}, outputs: []regMask{fp}}
 		fpstore     = regInfo{inputs: []regMask{gp.union(sp).union(sb), fp}}
 		fpstoreidx  = regInfo{inputs: []regMask{gp.union(sp).union(sb), gp.union(sp).union(sb), fp}}
+		// SIMD vector memory access via the indexed VSX forms LXV/STXV
+		// (R0 supplies the implicit zero index). Registers are constrained to vmxReg
+		vxload      = regInfo{inputs: []regMask{gp.union(sp).union(sb)}, outputs: []regMask{vmxReg}}
+		vxstore     = regInfo{inputs: []regMask{gp.union(sp).union(sb), vmxReg}}
+		v11         = regInfo{inputs: []regMask{vmxReg}, outputs: []regMask{vmxReg}}
+		v21         = regInfo{inputs: []regMask{vmxReg, vmxReg}, outputs: []regMask{vmxReg}}
+		v31         = regInfo{inputs: []regMask{vmxReg, vmxReg, vmxReg}, outputs: []regMask{vmxReg}}
+
 		callerSave  = regMask(gp.union(fp).union(vmxReg).union(gr).union(xer))
 		first7      = buildReg("R3 R4 R5 R6 R7 R8 R9")
 	)
@@ -521,6 +529,11 @@ func init() {
 		// the output register from the full VSX file (vsxReg); ssaGenValue
 		// translates it to the VSX name via simdReg when it lands in the F0-F31 bank.
 		{name: "Zero128", argLength: 0, reg: regInfo{outputs: []regMask{vsxReg}}, asm: "XXLXOR", typ: "Vec128", rematerializeable: true},
+		// 128-bit vector load/store, the ppc64 lowering of the generic Load/Store
+		// of a 16-byte SIMD type (unaligned-safe)
+		// POWER9+: single-instruction D-form, 0(base), no index register.
+		{name: "LXVload", argLength: 2, reg: vxload, asm: "LXV", typ: "Vec128", faultOnNilArg0: true},   // load 128 bits from 0(arg0), arg1=mem
+		{name: "STXVstore", argLength: 3, reg: vxstore, asm: "STXV", typ: "Mem", faultOnNilArg0: true}, // store 128-bit arg1 to 0(arg0), arg2=mem
 
 		// large or unaligned zeroing
 		// arg0 = address of memory to zero (in R3, changed as side effect)
@@ -815,7 +828,8 @@ func init() {
 		name:               "PPC64",
 		pkg:                "cmd/internal/obj/ppc64",
 		genfile:            "../../ppc64/ssa.go",
-		ops:                ops,
+		genSIMDfile:        "../../ppc64/simdssa.go",
+		ops:                append(ops, simdPPC64Ops(v11, v21, v31)...),
 		blocks:             blocks,
 		regnames:           regNamesPPC64,
 		ParamIntRegNames:   "R3 R4 R5 R6 R7 R8 R9 R10 R14 R15 R16 R17",
