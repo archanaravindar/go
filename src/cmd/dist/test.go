@@ -816,7 +816,6 @@ func (t *tester) registerTests() {
 			pkg:     "runtime/secret/...",
 		})
 	}
-
 	// Test GOEXPERIMENT=simd.
 	if !slices.Contains(strings.Split(goexperiment, ","), "simd") {
 		// simd package is portable.
@@ -825,8 +824,8 @@ func (t *tester) registerTests() {
 			env:     []string{"GOEXPERIMENT=" + goexperiments("simd")},
 			pkg:     "simd",
 		})
-		// simd/archsimd supports amd64, arm64, and wasm.
-		archsimdSupported := goarch == "amd64" || goarch == "arm64" || goarch == "wasm"
+		// simd/archsimd supports amd64, arm64, wasm, and ppc64le.
+		archsimdSupported := goarch == "amd64" || goarch == "arm64" || goarch == "wasm" || goarch == "ppc64le"
 		if archsimdSupported {
 			t.registerTest("GOEXPERIMENT=simd go test simd/archsimd/...", &goTest{
 				variant: "simd",

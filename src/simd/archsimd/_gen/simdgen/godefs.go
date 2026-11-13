@@ -761,6 +761,12 @@ func writeGoDefs(cl unify.Closure) error {
 	goTypeArch := archInfo.GoTypeArch
 	archLower := archInfo.Arch
 
+	// As of now, ppc64 SIMD works for little-endian only; emit the Go API files with a _ppc64le
+	// suffix so the filename's implicit GOARCH constraint limits them to ppc64le.
+	if archLower == "ppc64" {
+		goTypeArch = "ppc64le"
+	}
+
 	specDir := specgen.MustFindSpecDir(genFlags.GOROOT)
 	specIdx, err := specgen.LoadIndex(specDir, nil)
 	if err != nil {

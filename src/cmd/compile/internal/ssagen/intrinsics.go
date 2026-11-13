@@ -1746,6 +1746,9 @@ func initIntrinsics(cfg *intrinsicBuildConfig) {
 		// Fixed-width SIMD intrinsics.
 		simdAMD64Intrinsics(addF)
 		simdARM64Intrinsics(addF)
+		if cfg.goppc64 >= 9 {
+			simdPPC64Intrinsics(addF)
+		}
 		initWasmSIMD()
 
 		for _, typ := range []string{

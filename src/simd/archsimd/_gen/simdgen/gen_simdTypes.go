@@ -318,11 +318,11 @@ func simdPackageHeaderFor(experiment string) string {
 	if a := CurrentArch(); a.sharesBackendPackage() {
 		constraint += " && " + a.Arch
 	}
-	return generatedHeader() + `
-//go:build ` + constraint + `
+	return simdPackageHeaderConstraint(constraint)
+}
 
-package archsimd
-`
+func simdPackageHeaderConstraint(c string) string {
+	return generatedHeader() + "\n//go:build " + c + "\n\npackage archsimd\n"
 }
 
 func (x simdType) CPUFeature() string {
@@ -579,6 +579,31 @@ const simdLoadStoreTemplate = `
 // Len returns the number of elements in {{.Article}} {{.Name}}.
 func (x {{.Name}}) Len() int { return {{.LenExpr}} }
 
+// Load{{.Name}}Array loads {{.Article}} {{.Name}} from an array.
+//
+//go:noescape
+func Load{{.Name}}Array(x *[{{.Lanes}}]{{.Base}}) {{.Name}}
+
+// StoreArray stores {{.Article}} {{.Name}} to an array.
+//
+//go:noescape
+func (x {{.Name}}) StoreArray(y *[{{.Lanes}}]{{.Base}})
+`
+
+// simdPPC64LenTemplate and simdPPC64LoadStoreTemplate split what
+// simdLoadStoreTemplate emits as one block. ppc64le needs the pieces in
+// different files: Len() is plain Go valid on every GOPPC64 level, so it goes in
+// the shared types_ppc64le.go; the array Load/Store are intrinsified on POWER9
+// but emulated on POWER8, so they go in the POWER9-tagged ops_ppc64le.go (and the
+// hand-written power8 emulated file). Kept as ppc64-local consts -- like the
+// TypeDotMethodIntrinsicPPC64 const in gen_simdIntrinsics.go -- so no other arch
+// is affected.
+const simdPPC64LenTemplate = `
+// Len returns the number of elements in {{.Article}} {{.Name}}.
+func (x {{.Name}}) Len() int { return {{.LenExpr}} }
+`
+
+const simdPPC64LoadStoreTemplate = `
 // Load{{.Name}}Array loads {{.Article}} {{.Name}} from an array.
 //
 //go:noescape
@@ -1088,8 +1113,15 @@ func writeSIMDTypes(buffer *bytes.Buffer, typeMap simdTypeMap) {
 	scalableLoadStore := templateOf(simdScalableLoadStoreTemplate, "loadstore_scalable")
 	maskedLoadStore := templateOf(simdMaskedLoadStoreTemplate, "maskedloadstore_amd64")
 	maskFromVal := templateOf(simdMaskFromValTemplate, "maskFromVal_amd64")
+	ppc64Len := templateOf(simdPPC64LenTemplate, "ppc64len")
 
-	buffer.WriteString(simdPackageHeader())
+	header := simdPackageHeader()
+	if CurrentArch().Arch == "ppc64" {
+		// PPC64 SIMD is still experimental, including on POWER8 where its
+		// operations are implemented by the fallback source file.
+		header = simdPackageHeaderConstraint("goexperiment.simd")
+	}
+	buffer.WriteString(header)
 
 	if CurrentArch().isSVE() {
 		// SVE predicates are represented as-is (a P register), not as data vectors,
@@ -1130,19 +1162,28 @@ type psve struct {
 				panic(fmt.Errorf("failed to execute type template for type %s: %w", typeDef.Name(), err))
 			}
 			if !typeDef.IsMask() {
-				// Scalable (SVE) types get a partial, slice-based load/store; the
-				// fixed-width types get the array load/store.
-				ls, lsName := loadStore, "loadstore_amd64"
-				if typeDef.IsScalable() {
-					ls, lsName = scalableLoadStore, "loadstore_scalable"
-				}
-				if err := ls.ExecuteTemplate(buffer, lsName, typeDef); err != nil {
-					panic(fmt.Errorf("failed to execute loadstore template for type %s: %w", typeDef.Name(), err))
-				}
-				// restrict to AVX2 masked loads/stores first.
-				if CurrentArch().Arch == "amd64" && typeDef.MaskedLoadStoreFilter() {
-					if err := maskedLoadStore.ExecuteTemplate(buffer, "maskedloadstore_amd64", typeDef); err != nil {
-						panic(fmt.Errorf("failed to execute maskedloadstore template for type %s: %w", typeDef.Name(), err))
+				if CurrentArch().Arch == "ppc64" {
+					// ppc64: Len() belongs in the shared types file; the array
+					// Load/Store API is emitted into the POWER9-tagged ops file by
+					// writeSIMDStubs (and hand-written for POWER8 emulation).
+					if err := ppc64Len.ExecuteTemplate(buffer, "ppc64len", typeDef); err != nil {
+						panic(fmt.Errorf("failed to execute ppc64 len template for type %s: %w", typeDef.Name(), err))
+					}
+				} else {
+					// Scalable (SVE) types get a partial, slice-based load/store; the
+					// fixed-width types get the array load/store.
+					ls, lsName := loadStore, "loadstore_amd64"
+					if typeDef.IsScalable() {
+						ls, lsName = scalableLoadStore, "loadstore_scalable"
+					}
+					if err := ls.ExecuteTemplate(buffer, lsName, typeDef); err != nil {
+						panic(fmt.Errorf("failed to execute loadstore template for type %s: %w", typeDef.Name(), err))
+					}
+					// restrict to AVX2 masked loads/stores first.
+					if CurrentArch().Arch == "amd64" && typeDef.MaskedLoadStoreFilter() {
+						if err := maskedLoadStore.ExecuteTemplate(buffer, "maskedloadstore_amd64", typeDef); err != nil {
+							panic(fmt.Errorf("failed to execute maskedloadstore template for type %s: %w", typeDef.Name(), err))
+						}
 					}
 				}
 			} else if CurrentArch().isSVE() {
@@ -1455,11 +1496,17 @@ func opStub(op Operation) ([]byte, bool) {
 // vector intrinsics to fI. If fExp is nil, the experimental public vector
 // intrinsics go to f.
 func writeSIMDStubs(f, fExp, fI *bytes.Buffer, ops []Operation, typeMap simdTypeMap, specIdx *specgen.Index) {
-	f.WriteString(simdPackageHeader())
-	if fExp != nil {
-		fExp.WriteString(simdPackageHeaderFor(sgutil.PhaseExperiment.Experiment()))
+	hdr := simdPackageHeader()
+	expHdr := simdPackageHeaderFor(sgutil.PhaseExperiment.Experiment())
+	if CurrentArch().Arch == "ppc64" {
+		hdr = simdPackageHeaderConstraint("goexperiment.simd && ppc64le.power9")
+		expHdr = hdr
 	}
-	fI.WriteString(simdPackageHeader())
+	f.WriteString(hdr)
+	if fExp != nil {
+		fExp.WriteString(expHdr)
+	}
+	fI.WriteString(hdr)
 
 	slices.SortFunc(ops, compareOperations)
 
@@ -1526,6 +1573,23 @@ func writeSIMDStubs(f, fExp, fI *bytes.Buffer, ops []Operation, typeMap simdType
 			}
 			if err := tpl.Execute(f, mask); err != nil {
 				panic(fmt.Errorf("failed to execute mask template for mask %s: %w", mask.Name(), err))
+			}
+		}
+	}
+
+	// ppc64: the array Load/Store live in this POWER9-tagged ops file (not the
+	// shared types file), so the POWER8 emulated file can supply its own bodies
+	// without a duplicate declaration. writeSIMDTypes emits only Len() for ppc64.
+	if CurrentArch().Arch == "ppc64" {
+		ppc64LoadStore := templateOf(simdPPC64LoadStoreTemplate, "ppc64loadstore")
+		for _, width := range slices.SortedFunc(maps.Keys(typeMap), compareWidths) {
+			for _, typeDef := range typeMap[width] {
+				if typeDef.IsMask() {
+					continue
+				}
+				if err := ppc64LoadStore.ExecuteTemplate(f, "ppc64loadstore", typeDef); err != nil {
+					panic(fmt.Errorf("failed to execute ppc64 loadstore template for type %s: %w", typeDef.Name(), err))
+				}
 			}
 		}
 	}
