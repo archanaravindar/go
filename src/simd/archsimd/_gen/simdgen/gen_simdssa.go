@@ -25,7 +25,7 @@ import (
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssagen"
 	"cmd/internal/obj"
-{{- if or (eq .Arch "amd64") (eq .Arch "arm64")}}
+{{- if .NeedsObjArch}}
 	"cmd/internal/obj/{{.ObjArch}}"
 {{- end}}
 	"cmd/compile/internal/ssa/ssaop"
@@ -132,8 +132,12 @@ func (op Operation) mergingOp() Operation {
 }
 
 type tplSSAHeader struct {
-	Arch            string
-	ObjArch         string
+	Arch    string
+	ObjArch string
+	// NeedsObjArch reports whether the generated body references a constant from
+	// the "cmd/internal/obj/<ObjArch>" package, so the import is emitted only
+	// when it is actually used (otherwise it would be an unused import).
+	NeedsObjArch    bool
 	GeneratedHeader string
 	// FuncInfix disambiguates the generated ssaGenSIMD<FuncInfix>Value function
 	// name when a target shares another's backend package.
@@ -389,9 +393,25 @@ func writeSIMDSSA(buffer *bytes.Buffer, ops []Operation) {
 		panic(fmt.Errorf("unsupported register constraint for prog, please update gen_simdssa.go and amd64/ssa.go: %+v\nAll keys: %v\n, cases: %v\n", allUnseen, allKeys, allUnseenCaseStr))
 	}
 
+	// The "cmd/internal/obj/<ObjArch>" import is used only by arch-specific
+	// constants in the generated body: the arrangement operand (e.g.
+	// arm64.ARNG_4S emitted into the "case" template) and x86.ParseSuffix in the
+	// "zeroing" template. Include the import only when one of those is actually
+	// emitted, so arches whose ssaGen references no obj constant (e.g. ppc64)
+	// don't get an unused import.
+	needsObjArch := len(ZeroingMask) != 0
+	for _, cases := range regInfoSet {
+		for _, caseStr := range cases {
+			if getArrangementFromOp(archInfo, caseStr) != "" {
+				needsObjArch = true
+			}
+		}
+	}
+
 	headerData := tplSSAHeader{
 		Arch:            archInfo.Arch,
 		ObjArch:         archInfo.ObjArch,
+		NeedsObjArch:    needsObjArch,
 		GeneratedHeader: archInfo.GeneratedHeader,
 		FuncInfix:       archInfo.ssaGenFuncInfix(),
 		FalseDep:        strings.Join(FalseDep, ",\n\t\t"),

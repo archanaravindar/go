@@ -6,10 +6,16 @@ package archsimd
 
 // v128 is a tag type that tells the compiler that this is really 128-bit SIMD
 type v128 struct {
-	_128 [0]func() // uncomparable
+	// _align gives the tag, and so the vector types that start with it,
+	// the 8-byte alignment that the compiler gives SIMD types. Unlike
+	// the compiler, go/types and types2 compute the alignment from the
+	// fields.
+	_align [0]uint64
 }
 
 // Int32x4 is a 128-bit SIMD vector of 4 int32s.
+//
+// Values of type Int32x4 are comparable. a == b if a[i] == b[i] for all elements.
 type Int32x4 struct {
 	int32x4 v128
 	vals    [4]int32
@@ -19,6 +25,8 @@ type Int32x4 struct {
 func (x Int32x4) Len() int { return 4 }
 
 // Uint32x4 is a 128-bit SIMD vector of 4 uint32s.
+//
+// Values of type Uint32x4 are comparable. a == b if a[i] == b[i] for all elements.
 type Uint32x4 struct {
 	uint32x4 v128
 	vals     [4]uint32
