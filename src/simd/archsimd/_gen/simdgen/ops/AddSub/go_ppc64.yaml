@@ -26,3 +26,25 @@
     - {class: vreg, go: Uint32x4, base: uint, elemBits: 32, bits: 128, lanes: 4, asmPos: 2}
   out:
     - {class: vreg, go: Uint32x4, base: uint, elemBits: 32, bits: 128, lanes: 4, asmPos: 0}
+
+- go: Add
+  asm: "VADDUDM"
+  goarch: ppc64
+  cpuFeature: VMX
+  inVariant: []
+  in:
+    - {class: vreg, go: Int64x2, base: int, elemBits: 64, bits: 128, lanes: 2, asmPos: 1}
+    - {class: vreg, go: Int64x2, base: int, elemBits: 64, bits: 128, lanes: 2, asmPos: 2}
+  out:
+    - {class: vreg, go: Int64x2, base: int, elemBits: 64, bits: 128, lanes: 2, asmPos: 0}
+
+- go: Add
+  asm: "VADDUDM"            # modular add is sign-agnostic — same op as Int64x2
+  goarch: ppc64
+  cpuFeature: VMX
+  inVariant: []
+  in:
+    - {class: vreg, go: Uint64x2, base: uint, elemBits: 64, bits: 128, lanes: 2, asmPos: 1}
+    - {class: vreg, go: Uint64x2, base: uint, elemBits: 64, bits: 128, lanes: 2, asmPos: 2}
+  out:
+    - {class: vreg, go: Uint64x2, base: uint, elemBits: 64, bits: 128, lanes: 2, asmPos: 0}

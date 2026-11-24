@@ -35,11 +35,17 @@ func RewriteValue(v *ssa.Value) bool {
 	case ssaop.OpAddInt32x4:
 		v.Op = ssaop.OpPPC64VADDUWM128
 		return true
+	case ssaop.OpAddInt64x2:
+		v.Op = ssaop.OpPPC64VADDUDM128
+		return true
 	case ssaop.OpAddPtr:
 		v.Op = ssaop.OpPPC64ADD
 		return true
 	case ssaop.OpAddUint32x4:
 		v.Op = ssaop.OpPPC64VADDUWM128
+		return true
+	case ssaop.OpAddUint64x2:
+		v.Op = ssaop.OpPPC64VADDUDM128
 		return true
 	case ssaop.OpAddr:
 		return rewriteValue_OpAddr(v)

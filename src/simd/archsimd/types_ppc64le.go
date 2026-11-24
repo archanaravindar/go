@@ -24,6 +24,17 @@ type Int32x4 struct {
 // Len returns the number of elements in x.
 func (x Int32x4) Len() int { return 4 }
 
+// Int64x2 is a 128-bit SIMD vector of 2 int64s.
+//
+// Values of type Int64x2 are comparable. a == b if a[i] == b[i] for all elements.
+type Int64x2 struct {
+	int64x2 v128
+	vals    [2]int64
+}
+
+// Len returns the number of elements in x.
+func (x Int64x2) Len() int { return 2 }
+
 // Uint32x4 is a 128-bit SIMD vector of 4 uint32s.
 //
 // Values of type Uint32x4 are comparable. a == b if a[i] == b[i] for all elements.
@@ -34,3 +45,14 @@ type Uint32x4 struct {
 
 // Len returns the number of elements in x.
 func (x Uint32x4) Len() int { return 4 }
+
+// Uint64x2 is a 128-bit SIMD vector of 2 uint64s.
+//
+// Values of type Uint64x2 are comparable. a == b if a[i] == b[i] for all elements.
+type Uint64x2 struct {
+	uint64x2 v128
+	vals     [2]uint64
+}
+
+// Len returns the number of elements in x.
+func (x Uint64x2) Len() int { return 2 }

@@ -6321,6 +6321,7 @@ const (
 	OpPPC64FlagEQ
 	OpPPC64FlagLT
 	OpPPC64FlagGT
+	OpPPC64VADDUDM128
 	OpPPC64VADDUWM128
 
 	OpRISCV64ADD
@@ -108495,6 +108496,21 @@ var OpcodeTable = [...]OpInfo{
 		Name:   "FlagGT",
 		ArgLen: 0,
 		Reg:    RegInfo{},
+	},
+	{
+		Name:        "VADDUDM128",
+		ArgLen:      2,
+		Commutative: true,
+		asm:         ppc64.AVADDUDM,
+		Reg: RegInfo{
+			Inputs: []InputInfo{
+				{0, RegMask{V1: 0, V2: 4294967295}}, // V0 V1 V2 V3 V4 V5 V6 V7 V8 V9 V10 V11 V12 V13 V14 V15 V16 V17 V18 V19 V20 V21 V22 V23 V24 V25 V26 V27 V28 V29 V30 V31
+				{1, RegMask{V1: 0, V2: 4294967295}}, // V0 V1 V2 V3 V4 V5 V6 V7 V8 V9 V10 V11 V12 V13 V14 V15 V16 V17 V18 V19 V20 V21 V22 V23 V24 V25 V26 V27 V28 V29 V30 V31
+			},
+			Outputs: []OutputInfo{
+				{0, RegMask{V1: 0, V2: 4294967295}}, // V0 V1 V2 V3 V4 V5 V6 V7 V8 V9 V10 V11 V12 V13 V14 V15 V16 V17 V18 V19 V20 V21 V22 V23 V24 V25 V26 V27 V28 V29 V30 V31
+			},
+		},
 	},
 	{
 		Name:        "VADDUWM128",

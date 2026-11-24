@@ -11,10 +11,11 @@ import (
 	"testing"
 )
 
-// The ppc64le SIMD support currently implements Int32x4/Uint32x4 Add
-// (VADDUWM), the array load/store (LXV/STXV on POWER9+, LXVD2X/STXVD2X on
-// POWER8), and the no-op reinterpret/convert helpers. These tests exercise
-// exactly that surface.
+// The ppc64le SIMD support currently implements Add for Int32x4/Uint32x4
+// (VADDUWM) and Int64x2/Uint64x2 (VADDUDM), the array load/store (LXV/STXV on
+// POWER9+, LXVD2X/STXVD2X on POWER8), and the reinterpret/convert/reshape
+// helpers. These tests exercise exactly that surface. On POWER8 every operation
+// above is pure-Go emulation; on POWER9+ it is native instructions.
 
 func TestInt32x4Add(t *testing.T) {
 	a := [4]int32{1, 2, 3, 4}
@@ -136,4 +137,106 @@ func expectPanicPPC64(t *testing.T, f func()) {
 		}
 	}()
 	f()
+}
+
+// --- Int64x2 / Uint64x2 (VADDUDM) ---
+
+func TestInt64x2Add(t *testing.T) {
+	a := [2]int64{1, -2}
+	b := [2]int64{0x0000000100000000, 5} // includes bits above the low 32
+	want := []int64{0x0000000100000001, 3}
+
+	var got [2]int64
+	archsimd.LoadInt64x2Array(&a).Add(archsimd.LoadInt64x2Array(&b)).StoreArray(&got)
+	checkSlices(t, got[:], want)
+}
+
+// TestUint64x2Add is the regression guard for the add width. Lane 0 forces a
+// carry from bit 31 into bit 32: a 32-bit word add (VADDUWM — the wrong
+// instruction) drops that carry and yields 0, while the correct 64-bit
+// doubleword add (VADDUDM) yields 0x1_00000000. Lane 1 checks modulo-2^64 wrap.
+func TestUint64x2Add(t *testing.T) {
+	a := [2]uint64{0x00000000FFFFFFFF, 0xFFFFFFFFFFFFFFFF}
+	b := [2]uint64{0x0000000000000001, 0x0000000000000001}
+	want := []uint64{0x0000000100000000, 0}
+
+	var got [2]uint64
+	archsimd.LoadUint64x2Array(&a).Add(archsimd.LoadUint64x2Array(&b)).StoreArray(&got)
+	checkSlices(t, got[:], want)
+}
+
+// TestInt64x2LoadStoreRoundTrip exercises the 16-byte load+store path with no
+// arithmetic in between.
+func TestInt64x2LoadStoreRoundTrip(t *testing.T) {
+	a := [2]int64{-5, 0x0123456789abcdef}
+	var got [2]int64
+	archsimd.LoadInt64x2Array(&a).StoreArray(&got)
+	checkSlices(t, got[:], a[:])
+}
+
+//go:noinline
+func addInt64x2Noinline(a, b archsimd.Int64x2) archsimd.Int64x2 { return a.Add(b) }
+
+// TestInt64x2AddAcrossCall passes vectors through a real (non-inlined) ABI
+// boundary.
+func TestInt64x2AddAcrossCall(t *testing.T) {
+	a := [2]int64{1, 0x0000000100000000}
+	b := [2]int64{5, 0x0000000100000000}
+	want := []int64{6, 0x0000000200000000}
+
+	var got [2]int64
+	addInt64x2Noinline(archsimd.LoadInt64x2Array(&a), archsimd.LoadInt64x2Array(&b)).StoreArray(&got)
+	checkSlices(t, got[:], want)
+}
+
+// TestInt64x2AddSpill keeps a vector live across a call, forcing a spill/reload
+// (D-form STXV/LXV on POWER9+, indexed on POWER8).
+func TestInt64x2AddSpill(t *testing.T) {
+	a := [2]int64{1, 0x0000000100000000}
+	b := [2]int64{100, 0x0000000100000000}
+	want := []int64{101, 0x0000000200000000}
+
+	sum := archsimd.LoadInt64x2Array(&a).Add(archsimd.LoadInt64x2Array(&b))
+	blackhole() // clobbers caller-saved regs; sum must survive via a spill
+	var got [2]int64
+	sum.StoreArray(&got)
+	checkSlices(t, got[:], want)
+}
+
+// TestReinterpret64 checks the same-width int64<->uint64 reinterpret/convert
+// helpers round-trip to the identity.
+func TestReinterpret64(t *testing.T) {
+	a := [2]int64{-1, 0x7fffffffffffffff}
+
+	var got [2]int64
+	archsimd.LoadInt64x2Array(&a).ToBits().BitsToInt64().StoreArray(&got)
+	checkSlices(t, got[:], a[:])
+
+	var got2 [2]int64
+	archsimd.LoadInt64x2Array(&a).ConvertToUint64().ConvertToInt64().StoreArray(&got2)
+	checkSlices(t, got2[:], a[:])
+}
+
+// TestReshape64 checks the cross-width bitcast reshapes. On ppc64le (little
+// endian) ReshapeToUint64s packs lanes 2i,2i+1 into one uint64 with lane 2i in
+// the low 32 bits; ReshapeToUint32s is the inverse.
+func TestReshape64(t *testing.T) {
+	a := [4]uint32{0x11111111, 0x22222222, 0x33333333, 0x44444444}
+	wide := []uint64{0x2222222211111111, 0x4444444433333333}
+
+	var got [2]uint64
+	archsimd.LoadUint32x4Array(&a).ReshapeToUint64s().StoreArray(&got)
+	checkSlices(t, got[:], wide)
+
+	var back [4]uint32
+	archsimd.LoadUint64x2Array(&got).ReshapeToUint32s().StoreArray(&back)
+	checkSlices(t, back[:], a[:])
+}
+
+func TestLen64(t *testing.T) {
+	var x archsimd.Int64x2
+	var y archsimd.Uint64x2
+	if x.Len() != 2 || y.Len() != 2 {
+		t.Errorf("Len: got %d/%d, want 2/2", x.Len(), y.Len())
+	}
 }

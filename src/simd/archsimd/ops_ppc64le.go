@@ -17,8 +17,22 @@ func (x Int32x4) Add(y Int32x4) (z Int32x4)
 //
 //	z[i] = x[i] + y[i]
 //
+// Asm: VADDUDM, CPU Feature: VMX
+func (x Int64x2) Add(y Int64x2) (z Int64x2)
+
+// Add adds x and y elementwise.
+//
+//	z[i] = x[i] + y[i]
+//
 // Asm: VADDUWM, CPU Feature: VMX
 func (x Uint32x4) Add(y Uint32x4) (z Uint32x4)
+
+// Add adds x and y elementwise.
+//
+//	z[i] = x[i] + y[i]
+//
+// Asm: VADDUDM, CPU Feature: VMX
+func (x Uint64x2) Add(y Uint64x2) (z Uint64x2)
 
 // BitsToInt32 reinterprets the bits of each element of x as type int32.
 func (x Uint32x4) BitsToInt32() (z Int32x4)
@@ -40,6 +54,48 @@ func (x Int32x4) ConvertToUint32() (z Uint32x4)
 // ToBits reinterprets the bits of each element of x as type uint32.
 func (x Int32x4) ToBits() (z Uint32x4)
 
+// ReshapeToUint64s reinterprets the bits of x as a Uint64x2 vector.
+//
+// Both the vector elements and the bits of each element are interpreted in
+// little endian order.
+//
+//	    x[3]      x[2]      x[1]      x[0]
+//	| 31 .. 0 | 31 .. 0 | 31 .. 0 | 31 .. 0 |
+//	| 63     ....     0 | 63     ....     0 |
+//	         z[1]                z[0]
+func (x Uint32x4) ReshapeToUint64s() (z Uint64x2)
+
+// BitsToInt64 reinterprets the bits of each element of x as type int64.
+func (x Uint64x2) BitsToInt64() (z Int64x2)
+
+// ConvertToInt64 converts each element of x to int64.
+//
+//	z[i] = int64(x[i])
+//
+// This wraps unrepresentable values.
+func (x Uint64x2) ConvertToInt64() (z Int64x2)
+
+// ConvertToUint64 converts each element of x to uint64.
+//
+//	z[i] = uint64(x[i])
+//
+// This wraps unrepresentable values.
+func (x Int64x2) ConvertToUint64() (z Uint64x2)
+
+// ToBits reinterprets the bits of each element of x as type uint64.
+func (x Int64x2) ToBits() (z Uint64x2)
+
+// ReshapeToUint32s reinterprets the bits of x as a Uint32x4 vector.
+//
+// Both the vector elements and the bits of each element are interpreted in
+// little endian order.
+//
+//	         x[1]                x[0]
+//	| 63     ....     0 | 63     ....     0 |
+//	| 31 .. 0 | 31 .. 0 | 31 .. 0 | 31 .. 0 |
+//	    z[3]      z[2]      z[1]      z[0]
+func (x Uint64x2) ReshapeToUint32s() (z Uint32x4)
+
 // LoadInt32x4Array loads an array into a vector.
 //
 //go:noescape
@@ -50,6 +106,16 @@ func LoadInt32x4Array(x *[4]int32) (z Int32x4)
 //go:noescape
 func (x Int32x4) StoreArray(y *[4]int32)
 
+// LoadInt64x2Array loads an array into a vector.
+//
+//go:noescape
+func LoadInt64x2Array(x *[2]int64) (z Int64x2)
+
+// StoreArray stores the elements of x to an array.
+//
+//go:noescape
+func (x Int64x2) StoreArray(y *[2]int64)
+
 // LoadUint32x4Array loads an array into a vector.
 //
 //go:noescape
@@ -59,3 +125,13 @@ func LoadUint32x4Array(x *[4]uint32) (z Uint32x4)
 //
 //go:noescape
 func (x Uint32x4) StoreArray(y *[4]uint32)
+
+// LoadUint64x2Array loads an array into a vector.
+//
+//go:noescape
+func LoadUint64x2Array(x *[2]uint64) (z Uint64x2)
+
+// StoreArray stores the elements of x to an array.
+//
+//go:noescape
+func (x Uint64x2) StoreArray(y *[2]uint64)

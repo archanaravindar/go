@@ -12,7 +12,8 @@ import (
 func ssaGenSIMDValue(s *ssagen.State, v *ssa.Value) bool {
 	var p *obj.Prog
 	switch v.Op {
-	case ssaop.OpPPC64VADDUWM128:
+	case ssaop.OpPPC64VADDUWM128,
+		ssaop.OpPPC64VADDUDM128:
 		p = simdV21(s, v)
 
 	default:

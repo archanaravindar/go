@@ -4,6 +4,7 @@ package main
 
 func simdPPC64Ops(v11, v21, v31 regInfo) []opData {
 	return []opData{
+		{name: "VADDUDM128", argLength: 2, reg: v21, asm: "VADDUDM", commutative: true, typ: "Vec128"},
 		{name: "VADDUWM128", argLength: 2, reg: v21, asm: "VADDUWM", commutative: true, typ: "Vec128"},
 	}
 }

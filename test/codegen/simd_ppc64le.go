@@ -25,6 +25,18 @@ func addUint32x4(x, y archsimd.Uint32x4) archsimd.Uint32x4 {
 	return x.Add(y)
 }
 
+func addInt64x2(x, y archsimd.Int64x2) archsimd.Int64x2 {
+	// ppc64le/power9:`VADDUDM`
+	return x.Add(y)
+}
+
+// Uint64x2 must use the 64-bit doubleword add (VADDUDM), not the 32-bit word
+// add (VADDUWM), so carries cross the 32-bit boundary within each lane.
+func addUint64x2(x, y archsimd.Uint64x2) archsimd.Uint64x2 {
+	// ppc64le/power9:`VADDUDM` -`VADDUWM`
+	return x.Add(y)
+}
+
 // On POWER9+ the 128-bit load/store use the single-instruction D-form
 // LXV/STXV.
 func loadStoreInt32x4(a, b *[4]int32) {
