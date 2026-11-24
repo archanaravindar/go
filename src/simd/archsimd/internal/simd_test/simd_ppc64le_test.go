@@ -240,3 +240,31 @@ func TestLen64(t *testing.T) {
 		t.Errorf("Len: got %d/%d, want 2/2", x.Len(), y.Len())
 	}
 }
+func TestInt16x8Add(t *testing.T) {
+	a := [8]int16{1, -2, 32767, -32768, -1, 0, 123, -123}
+	b := [8]int16{10, 5, 1, -1, 1, -1, -200, 123}
+	want := []int16{11, 3, -32768, 32767, 0, -1, -77, 0}
+
+	var got [8]int16
+	archsimd.LoadInt16x8Array(&a).
+		Add(archsimd.LoadInt16x8Array(&b)).
+		StoreArray(&got)
+
+	checkSlices(t, got[:], want)
+}
+
+func TestInt16x8AddDoesNotCarryBetweenLanes(t *testing.T) {
+	// Each -1 + 1 must become 0 without carrying into its neighbour.
+	// A 32-bit word add (VADDUWM) would incorrectly propagate that carry.
+	a := [8]int16{-1, 0, -1, 0, -1, 0, -1, 0}
+	b := [8]int16{1, 0, 1, 0, 1, 0, 1, 0}
+	want := make([]int16, 8)
+
+	var got [8]int16
+	archsimd.LoadInt16x8Array(&a).
+		Add(archsimd.LoadInt16x8Array(&b)).
+		StoreArray(&got)
+
+	checkSlices(t, got[:], want)
+}
+

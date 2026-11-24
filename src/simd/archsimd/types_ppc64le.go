@@ -13,6 +13,17 @@ type v128 struct {
 	_align [0]uint64
 }
 
+// Int16x8 is a 128-bit SIMD vector of 8 int16s.
+//
+// Values of type Int16x8 are comparable. a == b if a[i] == b[i] for all elements.
+type Int16x8 struct {
+	int16x8 v128
+	vals    [8]int16
+}
+
+// Len returns the number of elements in x.
+func (x Int16x8) Len() int { return 8 }
+
 // Int32x4 is a 128-bit SIMD vector of 4 int32s.
 //
 // Values of type Int32x4 are comparable. a == b if a[i] == b[i] for all elements.
@@ -34,6 +45,17 @@ type Int64x2 struct {
 
 // Len returns the number of elements in x.
 func (x Int64x2) Len() int { return 2 }
+
+// Uint16x8 is a 128-bit SIMD vector of 8 uint16s.
+//
+// Values of type Uint16x8 are comparable. a == b if a[i] == b[i] for all elements.
+type Uint16x8 struct {
+	uint16x8 v128
+	vals     [8]uint16
+}
+
+// Len returns the number of elements in x.
+func (x Uint16x8) Len() int { return 8 }
 
 // Uint32x4 is a 128-bit SIMD vector of 4 uint32s.
 //

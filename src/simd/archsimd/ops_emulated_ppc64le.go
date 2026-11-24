@@ -112,3 +112,78 @@ func (x Uint64x2) ReshapeToUint32s() (z Uint32x4) {
 	z.vals[3] = uint32(x.vals[1] >> 32)
 	return
 }
+
+func (x Int16x8) Add(y Int16x8) (z Int16x8) {
+	for i := range z.vals {
+		z.vals[i] = x.vals[i] + y.vals[i]
+	}
+	return
+}
+
+func LoadInt16x8Array(p *[8]int16) (z Int16x8) { z.vals = *p; return }
+
+func (x Int16x8) StoreArray(p *[8]int16) { *p = x.vals }
+
+func (x Uint16x8) Add(y Uint16x8) (z Uint16x8) {
+	for i := range z.vals {
+		z.vals[i] = x.vals[i] + y.vals[i]
+	}
+	return
+}
+
+func LoadUint16x8Array(p *[8]uint16) (z Uint16x8) { z.vals = *p; return }
+
+func (x Uint16x8) StoreArray(p *[8]uint16) { *p = x.vals }
+
+func (x Uint16x8) ReshapeToUint32s() (z Uint32x4) {
+	for i := range z.vals {
+		z.vals[i] = uint32(x.vals[2*i]) |
+			uint32(x.vals[2*i+1])<<16
+	}
+	return
+}
+
+func (x Uint32x4) ReshapeToUint16s() (z Uint16x8) {
+	for i := range x.vals {
+		z.vals[2*i] = uint16(x.vals[i])
+		z.vals[2*i+1] = uint16(x.vals[i] >> 16)
+	}
+	return
+}
+
+func (x Uint16x8) ReshapeToUint64s() (z Uint64x2) {
+	for i := range z.vals {
+		z.vals[i] = uint64(x.vals[4*i]) |
+			uint64(x.vals[4*i+1])<<16 |
+			uint64(x.vals[4*i+2])<<32 |
+			uint64(x.vals[4*i+3])<<48
+	}
+	return
+}
+
+func (x Uint64x2) ReshapeToUint16s() (z Uint16x8) {
+	for i := range x.vals {
+		z.vals[4*i] = uint16(x.vals[i])
+		z.vals[4*i+1] = uint16(x.vals[i] >> 16)
+		z.vals[4*i+2] = uint16(x.vals[i] >> 32)
+		z.vals[4*i+3] = uint16(x.vals[i] >> 48)
+	}
+	return
+}
+func (x Int16x8) ToBits() (z Uint16x8) {
+	for i := range z.vals {
+		z.vals[i] = uint16(x.vals[i])
+	}
+	return
+}
+
+func (x Uint16x8) BitsToInt16() (z Int16x8) {
+	for i := range z.vals {
+		z.vals[i] = int16(x.vals[i])
+	}
+	return
+}
+
+func (x Int16x8) ConvertToUint16() (z Uint16x8) { return x.ToBits() }
+
+func (x Uint16x8) ConvertToInt16() (z Int16x8) { return x.BitsToInt16() }
