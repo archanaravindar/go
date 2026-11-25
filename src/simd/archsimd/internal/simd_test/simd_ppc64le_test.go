@@ -26,7 +26,6 @@ func TestInt32x4Add(t *testing.T) {
 	archsimd.LoadInt32x4Array(&a).Add(archsimd.LoadInt32x4Array(&b)).StoreArray(&got)
 	checkSlices(t, got[:], want)
 }
-
 func TestInt32x4AddNegative(t *testing.T) {
 	a := [4]int32{-1, -2, 100, -2147483648}
 	b := [4]int32{-1, 5, -100, -1}
@@ -36,7 +35,6 @@ func TestInt32x4AddNegative(t *testing.T) {
 	archsimd.LoadInt32x4Array(&a).Add(archsimd.LoadInt32x4Array(&b)).StoreArray(&got)
 	checkSlices(t, got[:], want)
 }
-
 func TestUint32x4Add(t *testing.T) {
 	a := [4]uint32{1, 2, 0xFFFFFFFF, 0x80000000}
 	b := [4]uint32{10, 20, 1, 0x80000000}
@@ -46,7 +44,6 @@ func TestUint32x4Add(t *testing.T) {
 	archsimd.LoadUint32x4Array(&a).Add(archsimd.LoadUint32x4Array(&b)).StoreArray(&got)
 	checkSlices(t, got[:], want)
 }
-
 // TestInt32x4LoadStoreRoundTrip exercises the vector load+store path (LXV/STXV)
 // on its own, with no arithmetic in between.
 func TestInt32x4LoadStoreRoundTrip(t *testing.T) {
@@ -268,3 +265,32 @@ func TestInt16x8AddDoesNotCarryBetweenLanes(t *testing.T) {
 	checkSlices(t, got[:], want)
 }
 
+func TestInt8x16Add(t *testing.T) {
+	a := [16]int8{1, -2, 127, -128, -1, 0, 100, -100}
+	b := [16]int8{10, 5, 1, -1, 1, -1, 28, 100}
+	want := []int8{11, 3, -128, 127, 0, -1, -128, 0,
+		0, 0, 0, 0, 0, 0, 0, 0}
+
+	var got [16]int8
+	archsimd.LoadInt8x16Array(&a).
+		Add(archsimd.LoadInt8x16Array(&b)).
+		StoreArray(&got)
+
+	checkSlices(t, got[:], want)
+}
+
+
+func TestInt8x16AddDoesNotCarryBetweenLanes(t *testing.T) {
+	a := [16]int8{-1, 0, -1, 0, -1, 0, -1, 0,
+		-1, 0, -1, 0, -1, 0, -1, 0}
+	b := [16]int8{1, 0, 1, 0, 1, 0, 1, 0,
+		1, 0, 1, 0, 1, 0, 1, 0}
+	want := make([]int8, 16)
+
+	var got [16]int8
+	archsimd.LoadInt8x16Array(&a).
+		Add(archsimd.LoadInt8x16Array(&b)).
+		StoreArray(&got)
+
+	checkSlices(t, got[:], want)
+}

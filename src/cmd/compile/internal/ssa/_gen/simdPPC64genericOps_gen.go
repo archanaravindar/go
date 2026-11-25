@@ -4,9 +4,11 @@ package main
 
 func init() {
 	additionalGenericOps["ppc64"] = []opData{
+		{name: "AddInt8x16", argLength: 2, commutative: true},
 		{name: "AddInt16x8", argLength: 2, commutative: true},
 		{name: "AddInt32x4", argLength: 2, commutative: true},
 		{name: "AddInt64x2", argLength: 2, commutative: true},
+		{name: "AddUint8x16", argLength: 2, commutative: true},
 		{name: "AddUint16x8", argLength: 2, commutative: true},
 		{name: "AddUint32x4", argLength: 2, commutative: true},
 		{name: "AddUint64x2", argLength: 2, commutative: true},

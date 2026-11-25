@@ -70,3 +70,25 @@
     - {class: vreg, go: Uint16x8, base: uint, elemBits: 16, bits: 128, lanes: 8, asmPos: 2}
   out:
     - {class: vreg, go: Uint16x8, base: uint, elemBits: 16, bits: 128, lanes: 8, asmPos: 0}
+
+- go: Add
+  asm: "VADDUBM"
+  goarch: ppc64
+  cpuFeature: VMX
+  inVariant: []
+  in:
+    - {class: vreg, go: Int8x16, base: int, elemBits: 8, bits: 128, lanes: 16, asmPos: 1}
+    - {class: vreg, go: Int8x16, base: int, elemBits: 8, bits: 128, lanes: 16, asmPos: 2}
+  out:
+    - {class: vreg, go: Int8x16, base: int, elemBits: 8, bits: 128, lanes: 16, asmPos: 0}
+
+- go: Add
+  asm: "VADDUBM"
+  goarch: ppc64
+  cpuFeature: VMX
+  inVariant: []
+  in:
+    - {class: vreg, go: Uint8x16, base: uint, elemBits: 8, bits: 128, lanes: 16, asmPos: 1}
+    - {class: vreg, go: Uint8x16, base: uint, elemBits: 8, bits: 128, lanes: 16, asmPos: 2}
+  out:
+    - {class: vreg, go: Uint8x16, base: uint, elemBits: 8, bits: 128, lanes: 16, asmPos: 0}
